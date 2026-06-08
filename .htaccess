@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# Redirect to login if accessing root
+RewriteRule ^$ login.php [L]
+
+# Handle PHP files directly
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
