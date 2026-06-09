@@ -19,7 +19,7 @@ $default_wax_rate = 700; // Other customers rate
 // Special rate customers (100 Rs per gram)
 $special_rate_customers = [
     'Mohsin Wax' => 700,
-    'Waseem Bhai' => 650,
+    'Waseem Bhai' => 700,
 ];
 
 // Get Faisal's worker ID
@@ -56,7 +56,7 @@ function match_special_customer($customer_name, $special_rate_customers) {
 // ==========================================
 $faisal_wax_summary = [
     'Mohsin Wax' => ['qty' => 0, 'rate' => 700, 'amount' => 0],
-    'Waseem Bhai' => ['qty' => 0, 'rate' => 650, 'amount' => 0],
+    'Waseem Bhai' => ['qty' => 0, 'rate' => 700, 'amount' => 0],
 ];
 $faisal_other_customers = []; // Store other customer details
 $faisal_other_total_qty = 0;
@@ -813,7 +813,7 @@ if ($faisal_id) {
                 <tr class="special-row">
                     <td class="left"><strong>Waseem Bhai</strong></td>
                     <td><?= number_format($faisal_wax_summary['Waseem Bhai']['qty'], 3) ?></td>
-                    <td>650</td>
+                    <td>700</td>
                     <td class="right"><strong><?= format_currency($faisal_wax_summary['Waseem Bhai']['amount']) ?></strong></td>
                 </tr>
                 <!-- Row 3: All Other Customers (150 Rs/gram) -->

@@ -1,6 +1,7 @@
 <?php
 // API endpoint: Get customer balance
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions/ledger_functions.php';
 
 header('Content-Type: application/json');
 

@@ -790,6 +790,13 @@ include __DIR__ . '/templates/header.php';
                 <span>Detailed breakdown</span>
             </div>
         </a>
+                <a href="report_wax.php?start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" class="quick-action-card">
+            <div class="quick-action-icon amber">📈</div>
+            <div class="quick-action-text">
+                <h4>Wax Report</h4>
+                <span>Detailed breakdown</span>
+            </div>
+        </a>
         <a href="#" class="quick-action-card" onclick="document.getElementById('customerSelect').focus(); return false;">
             <div class="quick-action-icon green">📄</div>
             <div class="quick-action-text">

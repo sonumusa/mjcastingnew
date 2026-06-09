@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 requireAuth();
 require_once __DIR__ . '/../functions/gold_calculations.php';
+require_once __DIR__ . '/../functions/ledger_functions.php';
 
 $pageTitle = 'Party Details';
 
@@ -79,7 +80,6 @@ require_once __DIR__ . '/../includes/header.php';
 <?php if ($showLedger): ?>
 <!-- Full Ledger View -->
 <?php
-require_once __DIR__ . '/../functions/ledger_functions.php';
 $ledgerData = getCustomerLedger($id);
 $transactions = $ledgerData['transactions'] ?? [];
 ?>

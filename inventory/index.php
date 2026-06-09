@@ -24,10 +24,7 @@ $receiptKhalis = (float)$stmt->fetchColumn();
 $stmt = $db->query("SELECT COALESCE(SUM(khalis_weight),0) FROM invoice_receives");
 $invoiceReceivedKhalis = (float)$stmt->fetchColumn();
 
-$stmt = $db->query("SELECT COALESCE(SUM(total_received_khalis),0) FROM invoices WHERE status='active'");
-$invoiceInternalReceived = (float)$stmt->fetchColumn();
-
-$totalReceived = $receiptKhalis + $invoiceReceivedKhalis + $invoiceInternalReceived;
+$totalReceived = $receiptKhalis + $invoiceReceivedKhalis;
 
 $stmt = $db->query("SELECT COALESCE(SUM(effective_gold),0) FROM invoices WHERE status='active'");
 $givenWeight = (float)$stmt->fetchColumn();
@@ -58,7 +55,7 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="stat-icon"><i class="bi bi-arrow-down-circle text-success"></i></div>
         <div class="stat-label">Total Received</div>
         <div class="stat-value"><?= number_format($totalReceived, 3) ?> g</div>
-        <div class="stat-sub">Receipts: <?= number_format($receiptKhalis, 3) ?> | Invoice Receives: <?= number_format($invoiceReceivedKhalis, 3) ?> | Internal: <?= number_format($invoiceInternalReceived, 3) ?></div>
+        <div class="stat-sub">Receipts: <?= number_format($receiptKhalis, 3) ?> | Invoice Receives: <?= number_format($invoiceReceivedKhalis, 3) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-arrow-up-circle text-danger"></i></div>
@@ -79,7 +76,6 @@ require_once __DIR__ . '/../includes/header.php';
         <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Opening:</span><span class="mono"><?= number_format($inventory['opening_balance'], 3) ?> g</span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--success);"><span>+ Gold Receipts (Khalis):</span><span class="mono">+ <?= number_format($receiptKhalis, 3) ?> g</span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--success);"><span>+ Invoice Receives (Khalis):</span><span class="mono">+ <?= number_format($invoiceReceivedKhalis, 3) ?> g</span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--success);"><span>+ Invoice Internal Received:</span><span class="mono">+ <?= number_format($invoiceInternalReceived, 3) ?> g</span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--error);"><span>- Invoice Effective Gold Given:</span><span class="mono">- <?= number_format($givenWeight, 3) ?> g</span></div>
         <div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:2px solid var(--gold-primary);margin-top:4px;font-weight:700;font-size:1.1rem;">
             <span>= Closing Balance:</span>

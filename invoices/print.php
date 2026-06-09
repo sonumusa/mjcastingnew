@@ -20,6 +20,17 @@ $stmt = $db->prepare("SELECT * FROM invoice_receives WHERE invoice_id = ?");
 $stmt->execute([$id]);
 $receives = $stmt->fetchAll();
 
+// Fetch previous 2 invoices for this customer
+$stmt = $db->prepare("SELECT i.*, c.name as customer_name 
+                      FROM invoices i 
+                      LEFT JOIN customers c ON c.id = i.customer_id 
+                      WHERE i.customer_id = ? AND i.id < ? 
+                      ORDER BY i.id DESC 
+                      LIMIT 2");
+$stmt->execute([$invoice['customer_id'], $id]);
+$prevInvoices = $stmt->fetchAll();
+
+
 $format = query('format', 'slip');
 $breakdown = buildCalculationBreakdown($invoice);
 
@@ -88,6 +99,85 @@ $pageTitle = 'Print Invoice';
         .footer-section { margin-top: 14px; border-top: 1px solid #000; padding-top: 6px; text-align: center; font-size: 7pt; }
 
         @media print { .no-print { display: none !important; } .mj-header { -webkit-print-color-adjust: exact; } .received-section, .wasooli-section, .balance-summary { -webkit-print-color-adjust: exact; } }
+        
+                /* ===== PREVIOUS INVOICES HISTORY SECTION ===== */
+        .history-section {
+            margin-top: 4px;
+            border: 2px solid #1e3a5f;
+            background: #f8fbff;
+        }
+        .history-title {
+            text-align: center;
+            font-family: 'Noto Nastaliq Urdu', serif;
+            font-weight: 700;
+            font-size: 9pt;
+            background: #1e3a5f;
+            color: #fff;
+            padding: 3px;
+        }
+        .history-row {
+            display: flex;
+            border-bottom: 1px solid #1e3a5f;
+        }
+        .history-row:last-child {
+            border-bottom: none;
+        }
+        .history-invoice {
+            flex: 1;
+            padding: 4px 5px;
+            border-right: 1px solid #1e3a5f;
+        }
+        .history-invoice:last-child {
+            border-right: none;
+        }
+        .history-invoice-header {
+            text-align: center;
+            font-weight: 700;
+            font-size: 7pt;
+            border-bottom: 1px dashed #999;
+            padding-bottom: 2px;
+            margin-bottom: 3px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .history-invoice-header .inv-date {
+            font-size: 6pt;
+            color: #666;
+            font-weight: 400;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 1px 0;
+            font-size: 6pt;
+            border-bottom: 1px dotted #ddd;
+        }
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        .history-item .hist-label {
+            font-family: 'Noto Nastaliq Urdu', serif;
+            color: #444;
+        }
+        .history-item .hist-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+        .history-item.total-gold {
+            background: #e8f0ff;
+            padding: 2px 3px;
+            margin: 2px -3px;
+            border-radius: 2px;
+        }
+        .history-item.balance-due {
+            background: #fff0e8;
+            padding: 2px 3px;
+            margin: 2px -3px;
+            border-radius: 2px;
+        }
+        .history-item.balance-due .hist-value {
+            color: #c00;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body onload="window.print()">
@@ -133,7 +223,7 @@ $pageTitle = 'Print Invoice';
                 <tr>
                     <td class="meta-value"><?= date('h:i A', strtotime($invoice['created_at'])) ?></td>
                     <td class="meta-label">وقت</td>
-                    <td class="meta-value" style="text-align:right;"><?= number_format($invoice['rp_rate'], 2) ?> <span class="meta-label">میل:</span></td>
+                    <td class="meta-value" style="text-align:right;"><?= number_format($invoice['ratti'], 0) ?> <span class="meta-label">میل:</span></td>
                 </tr>
                 <?php if ($invoice['manual_book_no']): ?>
                 <tr>
@@ -147,11 +237,11 @@ $pageTitle = 'Print Invoice';
         <table class="calc-table">
             <tr><td class="calc-val"><?= number_format($invoice['casting_weight'], 3) ?></td><td class="calc-label">کاسٹنگ وزن</td></tr>
             <tr><td class="calc-val"><?= number_format($invoice['waste_weight'], 3) ?></td><td class="calc-label">ویسٹ</td></tr>
-            <tr><td class="calc-val"><strong><?= number_format($invoice['total_weight'], 3) ?></strong></td><td class="calc-label">ٹوٹل سونا پاؤنڈ</td></tr>
+            <tr><td class="calc-val"><strong><?= number_format($invoice['total_weight'], 3) ?></strong></td><td class="calc-label">ٹوٹل سونا </td></tr>
             <tr><td class="calc-val"><?= number_format($invoice['male_waste'], 3) ?></td><td class="calc-label">میل کاٹ</td></tr>
             <tr><td class="calc-val"><strong><?= number_format($invoice['gold_khalis'], 3) ?></strong></td><td class="calc-label">خالص سونا</td></tr>
-            <tr><td class="calc-val"><?= number_format($invoice['rp_mazdori_weight'], 3) ?> <?php if ($invoice['ratti'] > 0) echo '<span style="font-size:7pt;vertical-align:top;">' . htmlspecialchars($invoice['ratti']) . '</span>'; ?></td><td class="calc-label">اجرت کا پاسہ</td></tr>
-            <tr><td class="calc-val"><?= number_format($invoice['casting_mazdori_weight'], 3) ?></td><td class="calc-label">کاسٹنگ مزدوری وزن</td></tr>
+            <tr><td class="calc-val"><?= number_format($invoice['rp_mazdori_weight'], 3) ?> <?php if ($invoice['rp_mazdori_amount'] > 0) echo '<span style="font-size:7pt;vertical-align:top;">' . htmlspecialchars($invoice['rp_mazdori_amount']) . '</span>'; ?></td><td class="calc-label">RP مزدوری وزن</td></tr>
+            <tr><td class="calc-val"><?= number_format($invoice['casting_mazdori_weight'], 3) ?> <?php if ($invoice['casting_mazdori_amount'] > 0) echo '<span style="font-size:7pt;vertical-align:top;">' . htmlspecialchars($invoice['casting_mazdori_amount']) . '</span>'; ?> </td><td class="calc-label">کاسٹنگ مزدوری وزن</td></tr>
             <tr style="border-top:1px solid #000;"><td class="calc-val"><strong><?= number_format($invoice['effective_gold'], 3) ?></strong></td><td class="calc-label">ٹوٹل ایفیکٹو گولڈ</td></tr>
         </table>
 
@@ -178,10 +268,11 @@ $pageTitle = 'Print Invoice';
             <?php if ((float)$invoice['total_received_khalis'] > 0): ?><div class="balance-row"><span>- وصولی (سونے میں):</span><span style="color:#10b981;">- <?= number_format($invoice['total_received_khalis'], 3) ?> g</span></div><?php endif; ?>
             <?php if ((float)$invoice['wasooli'] > 0): ?><div class="balance-row"><span>- وصولی (کیش):</span><span style="color:#3b82f6;">- <?= number_format($invoice['wasooli'], 3) ?> g</span></div><?php endif; ?>
             <div class="balance-row total"><span>باقی بیلنس:</span><span style="color:<?= $invoice['remaining_balance'] > 0 ? '#dc2626' : '#10b981' ?>;"><?= number_format($invoice['remaining_balance'], 3) ?> g</span></div>
-            <div style="text-align:center;margin-top:6px;font-size:8pt;color:#666;"><?= $invoice['remaining_balance'] > 0 ? 'پارٹی آپ کی مقروض ہے' : 'آپ پارٹی کے مقروض ہیں' ?></div>
+            
         </div>
 
-        <?php if (!empty($receives)): ?>
+        <!--  <?php if (!empty($receives)): ?>
+        <div style="text-align:center;margin-top:6px;font-size:8pt;color:#666;"><?= $invoice['remaining_balance'] > 0 ? 'پارٹی آپ کی مقروض ہے' : 'آپ پارٹی کے مقروض ہیں' ?></div>
         <div style="margin-top:10px;border:1px solid #000;padding:6px;">
             <div style="font-weight:bold;margin-bottom:6px;font-family:'Noto Nastaliq Urdu',serif;">تفصیل وصولی (سونے کی)</div>
             <table class="calc-table" style="width:100%;font-size:9pt;">
@@ -198,6 +289,65 @@ $pageTitle = 'Print Invoice';
                     <?php endforeach; ?>
                 </tbody>
             </table>
+        </div>
+        <?php endif; ?>-->
+
+
+        <!-- ===== PREVIOUS INVOICES HISTORY ===== -->
+        <?php if (count($prevInvoices) > 0): ?>
+        <div class="history-section">
+            <div class="history-title">پچھلے انوائس کی تاریخ</div>
+            <div class="history-row">
+                <?php foreach ($prevInvoices as $idx => $prev): ?>
+                <div class="history-invoice">
+                    <div class="history-invoice-header">
+                        <?= htmlspecialchars($prev['invoice_no']) ?>
+                        <span class="inv-date">(<?= date('d-m-Y', strtotime($prev['invoice_date'])) ?>)</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label">رتی:</span>
+                        <span class="hist-value"><?= number_format($prev['ratti'], 0) ?> r</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label">گولڈ کاسٹنگ:</span>
+                        <span class="hist-value"><?= number_format($prev['total_weight'], 3) ?> g</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label">کل خالص:</span>
+                        <span class="hist-value"><?= number_format($prev['gold_khalis'], 3) ?> g</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label">آر پی وزن:</span>
+                        <span class="hist-value"><?= number_format($prev['rp_mazdori_weight'] ?? 0, 3) ?> g</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label">کاسٹنگ مزدوری:</span>
+                        <span class="hist-value"><?= number_format($prev['casting_mazdori_weight'] ?? 0, 3) ?> g</span>
+                    </div>
+                    <div class="history-item total-gold">
+                        <span class="hist-label"><strong>کل سونا:</strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['effective_gold'] ?? 0, 3) ?> g</strong></span>
+                    </div>
+                    <div class="history-item">
+                        <span class="hist-label"><strong>وصولی</td></tr>:</strong></span>
+                        <span class="hist-value"><strong>-<?= number_format($prev['total_received_khalis'] ?? 0, 3) ?> g</strong></span>
+                    </div>
+                                        <div class="history-item">
+                        <span class="hist-label"><strong>پچھلا بیلنس</td></tr>:</strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['previous_balance'] ?? 0, 3) ?> g</strong></span>
+                    </div>
+                    <div class="history-item balance-due">
+                        <span class="hist-label"><strong>بقایا بیلنس:</strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['remaining_balance'] ?? 0, 3) ?> g</strong></span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php if (count($prevInvoices) < 2): ?>
+                <div class="history-invoice" style="text-align:center; padding:15px; color:#999; font-size:7pt; font-family:'Noto Nastaliq Urdu',serif;">
+                    کوئی پچھلا انوائس نہیں
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
         <?php endif; ?>
 

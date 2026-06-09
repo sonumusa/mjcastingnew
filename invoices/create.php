@@ -1,9 +1,13 @@
 <?php
+
 require_once __DIR__ . '/../config.php';
+
 requireAuth();
+
 require_once __DIR__ . '/../functions/gold_calculations.php';
 
 $pageTitle = 'New Invoice';
+
 $extraCss = '<style>
     .invoice-grid { display: grid; grid-template-columns: 1fr 400px; gap: 32px; align-items: start; }
     .form-section { background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; padding: 28px; margin-bottom: 28px; box-shadow: var(--shadow-1); }
@@ -38,39 +42,43 @@ $extraCss = '<style>
     .box-remaining.cleared { background: linear-gradient(135deg, #064e3b, #059669); border: 1px solid var(--success); }
     .total-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.9; margin-bottom: 6px; font-weight: 700; }
     .total-value { font-family: "JetBrains Mono", monospace; font-size: 1.6rem; font-weight: 700; }
+    .hidden-field { display: none !important; }
     @media (max-width: 1024px) { .invoice-grid { grid-template-columns: 1fr; } .live-panel { position: static; } }
 </style>';
 
 $db = getDB();
+
 $customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status = 'active' ORDER BY name")->fetchAll();
+
 $nextInvoiceNo = generateInvoiceNo();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
     requireCsrf();
-    
+
     $customerId = (int) post('customer_id');
     $invoiceType = post('invoice_type', 'customer');
     $invoiceDate = post('invoice_date', date('Y-m-d'));
     $manualBookNo = post('manual_book_no');
     $remarks = post('remarks');
-    
+
     // Gold calculation inputs
     $castingWeight = parseDecimal(post('casting_weight', 0));
     $ratti = parseDecimal(post('ratti', 0));
     $rattiRate = parseDecimal(post('ratti_rate', 0));
     $rpRate = parseDecimal(post('rp_rate', 0));
     $rpMazdoriWeight = parseDecimal(post('rp_mazdori_weight', 0));
-    $rpMazdoriRate = parseDecimal(post('rp_mazdori_rate', 0));
+    $rpMazdoriAmount = parseDecimal(post('rp_mazdori_amount', 0)); // Changed from rate
     $castingMazdoriWeight = parseDecimal(post('casting_mazdori_weight', 0));
-    $castingMazdoriRate = parseDecimal(post('casting_mazdori_rate', 0));
-    $wasooli = parseDecimal(post('wasooli', 0));
-    
+    $castingMazdoriAmount = parseDecimal(post('casting_mazdori_amount', 0)); // Changed from rate
+    $wasooli = parseDecimal(post('wasooli', 0)); // Hidden but still stored
+
     // Validate
     if (!$customerId) {
         setFlash('error', 'Please select a party.');
         back();
     }
-    
+
     // Calculate total received khalis from dynamic rows
     $totalReceivedKhalis = 0;
     $receivesData = [];
@@ -92,28 +100,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     $totalReceivedKhalis = round($totalReceivedKhalis, 3);
-    
+
     // Get previous balance
     $previousBalance = getPreviousBalance($customerId);
-    
-    // Run calculation
+
+    // Run calculation - pass amount instead of rate, set rate to 0
     $calc = calculateGold([
         'casting_weight' => $castingWeight,
         'ratti' => $ratti,
         'ratti_rate' => $rattiRate,
         'rp_rate' => $rpRate,
         'rp_mazdori_weight' => $rpMazdoriWeight,
-        'rp_mazdori_rate' => $rpMazdoriRate,
+        'rp_mazdori_rate' => 0, // Rate no longer used
         'casting_mazdori_weight' => $castingMazdoriWeight,
-        'casting_mazdori_rate' => $castingMazdoriRate,
+        'casting_mazdori_rate' => 0, // Rate no longer used
         'wasooli' => $wasooli,
         'previous_balance' => $previousBalance,
         'total_received_khalis' => $totalReceivedKhalis,
     ]);
-    
+
+    // Override amounts with manually entered values
+    $calc['rp_mazdori_amount'] = $rpMazdoriAmount;
+    $calc['casting_mazdori_amount'] = $castingMazdoriAmount;
+
     try {
         $db->beginTransaction();
-        
+
         $invoiceNo = generateInvoiceNo();
         $stmt = $db->prepare("INSERT INTO invoices (
             invoice_no, customer_id, invoice_type, invoice_date, manual_book_no,
@@ -123,37 +135,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             effective_gold, grand_total, wasooli, previous_balance, remaining_balance,
             remarks, status, created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)");
-        
+
         $stmt->execute([
             $invoiceNo, $customerId, $invoiceType, $invoiceDate, $manualBookNo,
             $calc['casting_weight'], $calc['waste_weight'], $calc['total_weight'],
             $calc['ratti'], $calc['ratti_rate'], $calc['male_waste'], $calc['gold_khalis'], $totalReceivedKhalis,
-            $calc['rp_rate'], $calc['rp_amount'], $calc['rp_mazdori_weight'], $calc['rp_mazdori_rate'], $calc['rp_mazdori_amount'],
-            $calc['casting_mazdori_weight'], $calc['casting_mazdori_rate'], $calc['casting_mazdori_amount'],
+            $calc['rp_rate'], $calc['rp_amount'], $calc['rp_mazdori_weight'], 0, $calc['rp_mazdori_amount'], // rate stored as 0
+            $calc['casting_mazdori_weight'], 0, $calc['casting_mazdori_amount'], // rate stored as 0
             $calc['effective_gold'], $calc['grand_total'], $calc['wasooli'], $previousBalance, $calc['remaining_balance'],
             $remarks, $_SESSION['user_id']
         ]);
-        
+
         $invoiceId = $db->lastInsertId();
-        
+
         // Create receive rows
         foreach ($receivesData as $rec) {
             $stmt = $db->prepare("INSERT INTO invoice_receives (invoice_id, description, gross_weight, ratti_impurity, khalis_weight) VALUES (?, ?, ?, ?, ?)");
             $stmt->execute([$invoiceId, $rec['description'], $rec['gross_weight'], $rec['ratti_impurity'], $rec['khalis_weight']]);
         }
-        
+
         // Recalculate balance chain
         recalculateChain($customerId);
-        
+
         $db->commit();
-        
+
         setFlash('success', "Invoice $invoiceNo created successfully.");
-        
+
         if (post('action') === 'print') {
             redirect('invoices/print.php?id=' . $invoiceId);
         }
+        if (post('action') === 'print_receipt') {
+            redirect('invoices/print1.php?id=' . $invoiceId);
+        }
         redirect('invoices/show.php?id=' . $invoiceId);
-        
+
     } catch (Exception $e) {
         $db->rollBack();
         setFlash('error', 'Failed to save invoice: ' . $e->getMessage());
@@ -162,16 +177,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 require_once __DIR__ . '/../includes/header.php';
+
 ?>
 
 <form method="POST" id="invoice-form">
     <?= csrfField() ?>
     <input type="hidden" name="previous_balance" id="previous_balance" value="0">
     <input type="hidden" name="total_received_khalis" id="total_received_khalis" value="0">
-    
+    <input type="hidden" name="wasooli" id="wasooli" value="0">
+
     <div class="invoice-grid">
+
         <!-- Left Column: Form -->
         <div class="form-column">
+
             <div class="page-header" style="margin-bottom:28px;">
                 <div class="page-title-group">
                     <h1>New Invoice</h1>
@@ -203,8 +222,9 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php endforeach; ?>
                         </select>
                         <div id="customer-info" class="customer-info-box" style="display:none;background:var(--bg-surface);border:1px solid var(--gold-muted);padding:12px 16px;border-radius:10px;margin-top:12px;">
-                            <div style="display:flex;justify-content:space-between;">
-                                <span class="text-muted" style="font-size:0.8rem;">Last Balance: <span id="last-balance-display" class="mono" style="font-weight:600;">0.000 g</span></span>
+                            <div style="font-weight:600;font-size:1rem;color:var(--gold-primary);margin-bottom:8px;" id="selected-customer-name"></div>
+                            <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                                <span class="text-muted" style="font-size:0.8rem;">Previous Sabqa Balance: <span id="last-balance-display" class="mono" style="font-weight:600;color:var(--gold-bright);font-size:1.1rem;">0.000 g</span></span>
                                 <span class="text-muted" style="font-size:0.8rem;">Opening: <span id="opening-balance-display" class="mono">0.000 g</span></span>
                             </div>
                         </div>
@@ -250,14 +270,14 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                         <div class="formula-hint">Deduction per 10g casting</div>
                     </div>
-                    <div class="form-group">
+                   <!-- <div class="form-group">
                         <label>RP Rate <span class="font-urdu">آر پی ریٹ</span></label>
                         <div class="calc-input-wrapper">
                             <input type="number" name="rp_rate" id="rp_rate" class="form-control" step="0.01" value="0" required oninput="calculateLive()">
                             <span class="unit-label">Rs</span>
                         </div>
                         <div class="formula-hint">Redemption price per gram</div>
-                    </div>
+                    </div>-->
                     <div class="form-group">
                         <label>RP Mazdori Weight <span class="font-urdu">آر پی مزدوری وزن</span></label>
                         <div class="calc-input-wrapper">
@@ -265,10 +285,19 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">g</span>
                         </div>
                     </div>
-                    <div class="form-group">
+                    <!-- RP Mazdori Rate - HIDDEN -->
+                    <div class="form-group hidden-field">
                         <label>RP Mazdori Rate <span class="font-urdu">آر پی مزدوری ریٹ</span></label>
                         <div class="calc-input-wrapper">
                             <input type="number" name="rp_mazdori_rate" id="rp_mazdori_rate" class="form-control" step="0.01" value="0" oninput="calculateLive()">
+                            <span class="unit-label">Rs</span>
+                        </div>
+                    </div>
+                    <!-- RP Mazdori Amount - VISIBLE (manual entry) -->
+                    <div class="form-group">
+                        <label>RP Mazdori Amount <span class="font-urdu">آر پی مزدوری رقم</span></label>
+                        <div class="calc-input-wrapper">
+                            <input type="number" name="rp_mazdori_amount" id="rp_mazdori_amount" class="form-control" step="1" value="0" oninput="calculateLive()">
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
@@ -279,17 +308,27 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">g</span>
                         </div>
                     </div>
-                    <div class="form-group">
+                    <!-- Casting Mazdori Rate - HIDDEN -->
+                    <div class="form-group hidden-field">
                         <label>Casting Mazdori Rate <span class="font-urdu">کاسٹنگ مزدوری ریٹ</span></label>
                         <div class="calc-input-wrapper">
                             <input type="number" name="casting_mazdori_rate" id="casting_mazdori_rate" class="form-control" step="0.01" value="0" oninput="calculateLive()">
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
+                    <!-- Casting Mazdori Amount - VISIBLE (manual entry) -->
                     <div class="form-group">
+                        <label>Casting Mazdori Amount <span class="font-urdu">کاسٹنگ مزدوری رقم</span></label>
+                        <div class="calc-input-wrapper">
+                            <input type="number" name="casting_mazdori_amount" id="casting_mazdori_amount" class="form-control" step="0.01" value="0" oninput="calculateLive()">
+                            <span class="unit-label">Rs</span>
+                        </div>
+                    </div>
+                    <!-- Wasooli - HIDDEN -->
+                    <div class="form-group hidden-field">
                         <label>Wasooli <span class="font-urdu">وصولی</span></label>
                         <div class="calc-input-wrapper">
-                            <input type="number" name="wasooli" id="wasooli" class="form-control" step="0.001" value="0" oninput="calculateLive()">
+                            <input type="number" name="wasooli_visible" id="wasooli_visible" class="form-control" step="0.001" value="0" oninput="updateWasooli()">
                             <span class="unit-label">g</span>
                         </div>
                         <div class="formula-hint">Cash received from party</div>
@@ -326,6 +365,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div style="display:flex;gap:12px;padding:24px 0;">
                 <button type="submit" class="btn btn-gold" style="flex:1;"><i class="bi bi-save"></i> Save Invoice</button>
                 <button type="submit" name="action" value="print" class="btn btn-primary"><i class="bi bi-printer"></i> Save & Print</button>
+                <button type="submit" name="action" value="print_receipt" class="btn btn-secondary"><i class="bi bi-receipt"></i> Save & Receipt</button>
                 <a href="<?= url('invoices/index.php') ?>" class="btn btn-outline"><i class="bi bi-x"></i> Cancel</a>
             </div>
         </div>
@@ -336,7 +376,6 @@ require_once __DIR__ . '/../includes/header.php';
                 <span><i class="bi bi-lightning-charge"></i> Live Calculation</span>
                 <span class="font-urdu" style="font-size:0.85rem;color:var(--text-muted);">فوری حساب</span>
             </h4>
-
             <div class="live-row">
                 <span class="live-label"><i class="bi bi-arrow-right" style="color:var(--text-muted);"></i> Casting Weight</span>
                 <span class="live-value" id="live-casting">0.000 g</span>
@@ -369,17 +408,41 @@ require_once __DIR__ . '/../includes/header.php';
                 <span class="live-label"><i class="bi bi-check-circle" style="color:var(--success);"></i> = Effective Gold</span>
                 <span class="live-value" id="live-effective">0.000 g</span>
             </div>
-
             <div class="total-box box-grand-total">
                 <div class="total-label">Grand Total (Effective Gold)</div>
                 <div class="total-value" id="live-grand-total" style="color:#fff;">0.000 g</div>
             </div>
 
+            <!-- Balance Chain Steps -->
+            <div style="margin-top:12px;padding:14px 18px;background:linear-gradient(135deg, #1a1a2e, #16213e);border:1px solid #4361ee;border-radius:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span class="live-label" style="color:#b0c4ff;font-size:0.85rem;">
+                        <i class="bi bi-plus-circle" style="color:#4361ee;"></i> + Previous Sabqa Balance
+                    </span>
+                    <span class="live-value" id="live-previous-balance" style="color:#4361ee;font-weight:700;font-size:1.3rem;">0.000 g</span>
+                </div>
+            </div>
+            <!-- Wasooli section - HIDDEN from live panel  <div style="display:none;" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">-->
+            <div >
+                <div style="margin-top:8px;padding:10px 18px;background:rgba(220,53,69,0.08);border:1px solid rgba(220,53,69,0.3);border-radius:12px;">
+                    <div style="display:none;">
+                        <span class="live-label" style="color:#f87171;font-size:0.8rem;">
+                            <i class="bi bi-dash-circle" style="color:#dc3545;"></i> - Wasooli
+                        </span>
+                        <span class="live-value" id="live-wasooli-display" style="color:#f87171;font-size:1.1rem;">0.000 g</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span class="live-label" style="color:#f87171;font-size:0.8rem;">
+                            <i class="bi bi-dash-circle" style="color:#dc3545;"></i> - Received Khalis
+                        </span>
+                        <span class="live-value" id="live-received-display" style="color:#f87171;font-size:1.1rem;">0.000 g</span>
+                    </div>
+                </div>
+            </div>
             <div class="total-box box-remaining" id="remaining-box">
-                <div class="total-label">Remaining Balance</div>
+                <div class="total-label">= Remaining Balance (موجودہ بیلنس)</div>
                 <div class="total-value" id="live-remaining" style="color:#fff;">0.000 g</div>
             </div>
-
             <div style="margin-top:16px;padding:14px;background:var(--bg-surface);border-radius:10px;">
                 <div style="font-size:0.72rem;color:var(--text-muted);">RP Amount: <span id="live-rp-amount" class="mono">Rs 0.00</span></div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;">RP Mazdori Amt: <span id="live-rp-mazdori-amt" class="mono">Rs 0.00</span></div>
@@ -434,6 +497,12 @@ function removeReceiveRow(id) {
     calculateLive();
 }
 
+function updateWasooli() {
+    const val = parseFloat(document.getElementById('wasooli_visible').value) || 0;
+    document.getElementById('wasooli').value = val;
+    calculateLive();
+}
+
 function calculateLive() {
     // Get input values
     const castingWeight = parseFloat(document.getElementById('casting_weight').value) || 0;
@@ -441,9 +510,9 @@ function calculateLive() {
     const rattiRate = parseFloat(document.getElementById('ratti_rate').value) || 0;
     const rpRate = parseFloat(document.getElementById('rp_rate').value) || 0;
     const rpMazdoriWeight = parseFloat(document.getElementById('rp_mazdori_weight').value) || 0;
-    const rpMazdoriRate = parseFloat(document.getElementById('rp_mazdori_rate').value) || 0;
+    const rpMazdoriAmount = parseFloat(document.getElementById('rp_mazdori_amount').value) || 0; // Manual entry
     const castingMazdoriWeight = parseFloat(document.getElementById('casting_mazdori_weight').value) || 0;
-    const castingMazdoriRate = parseFloat(document.getElementById('casting_mazdori_rate').value) || 0;
+    const castingMazdoriAmount = parseFloat(document.getElementById('casting_mazdori_amount').value) || 0; // Manual entry
     const wasooli = parseFloat(document.getElementById('wasooli').value) || 0;
     
     // Calculate receive rows
@@ -476,7 +545,7 @@ function calculateLive() {
     // 1. Waste Weight
     let wasteWeight = 0;
     if (castingWeight > 0 && rattiRate > 0) {
-        wasteWeight = Math.round((castingWeight / 10 * rattiRate) * 1000) / 1000;
+        wasteWeight = Math.round((castingWeight / 10) * rattiRate * 1000) / 1000;
     }
     
     // 2. Total Weight
@@ -485,29 +554,23 @@ function calculateLive() {
     // 3. Male Waste
     let maleWaste = 0;
     if (totalWeight > 0 && ratti > 0) {
-        maleWaste = Math.round((totalWeight / 96 * ratti) * 1000) / 1000;
+        maleWaste = Math.round((totalWeight / 96) * ratti * 1000) / 1000;
     }
     
     // 4. Gold Khalis
     const goldKhalis = Math.round((totalWeight - maleWaste) * 1000) / 1000;
     
-    // 5. RP Amount
+    // 5. RP Amount (display only, calculated from gold khalis * rp_rate)
     const rpAmount = Math.round(goldKhalis * rpRate * 100) / 100;
     
-    // 6. RP Mazdori Amount
-    const rpMazdoriAmount = Math.round(rpMazdoriWeight * rpMazdoriRate * 100) / 100;
-    
-    // 7. Casting Mazdori Amount
-    const castingMazdoriAmount = Math.round(castingMazdoriWeight * castingMazdoriRate * 100) / 100;
-    
-    // 8. Effective Gold
+    // 6. Effective Gold
     const effectiveGold = Math.round((goldKhalis + rpMazdoriWeight + castingMazdoriWeight) * 1000) / 1000;
     
-    // 9. Grand Total
+    // 7. Grand Total
     const grandTotal = effectiveGold;
     
-    // 10. Remaining Balance
-    const remainingBalance = Math.round((previousBalance + effectiveGold - wasooli - totalReceivedKhalis) * 1000) / 1000;
+    // 8. Remaining Balance (without wasooli since it's hidden)
+    const remainingBalance = Math.round((previousBalance + effectiveGold - totalReceivedKhalis) * 1000) / 1000;
     
     // Update live panel
     document.getElementById('live-casting').textContent = castingWeight.toFixed(3) + ' g';
@@ -519,6 +582,9 @@ function calculateLive() {
     document.getElementById('live-casting-mazdori-wt').textContent = castingMazdoriWeight.toFixed(3) + ' g';
     document.getElementById('live-effective').textContent = effectiveGold.toFixed(3) + ' g';
     document.getElementById('live-grand-total').textContent = grandTotal.toFixed(3) + ' g';
+    document.getElementById('live-previous-balance').textContent = previousBalance.toFixed(3) + ' g';
+    document.getElementById('live-wasooli-display').textContent = wasooli.toFixed(3) + ' g';
+    document.getElementById('live-received-display').textContent = totalReceivedKhalis.toFixed(3) + ' g';
     
     const remainingEl = document.getElementById('live-remaining');
     remainingEl.textContent = remainingBalance.toFixed(3) + ' g';
@@ -546,6 +612,7 @@ function updateCustomerBalance(customerId) {
     fetch('<?= url('api/customer_balance.php?id=') ?>' + customerId)
         .then(r => r.json())
         .then(data => {
+            document.getElementById('selected-customer-name').textContent = '👤 ' + data.customer_name;
             document.getElementById('last-balance-display').textContent = data.balance.toFixed(3) + ' g';
             document.getElementById('opening-balance-display').textContent = data.opening_balance.toFixed(3) + ' g';
             document.getElementById('previous_balance').value = data.balance;
