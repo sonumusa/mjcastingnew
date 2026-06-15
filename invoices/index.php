@@ -126,7 +126,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <th>Party</th>
                 <th class="text-right">Casting (g)</th>
                 <th class="text-right">Effective (g)</th>
-                <th class="text-right">Wasooli</th>
+                <th class="text-right">Received</th>
                 <th class="text-right">Balance (g)</th>
                 <th>Status</th>
                 <th class="text-center">Actions</th>
@@ -145,13 +145,22 @@ require_once __DIR__ . '/../includes/header.php';
                     <td><?= htmlspecialchars($inv['customer_name'] ?? 'N/A') ?></td>
                     <td class="text-right mono"><?= number_format($inv['casting_weight'], 3) ?></td>
                     <td class="text-right mono"><?= number_format($inv['effective_gold'], 3) ?></td>
-                    <td class="text-right mono"><?= number_format($inv['wasooli'], 3) ?></td>
+                    <td class="text-right mono " style="color:var(--gold-primary);text-decoration:none;font-weight:600;"> <?= number_format($inv['total_received_khalis'], 3)  ?></td>
                     <td class="text-right mono <?= $inv['remaining_balance'] < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($inv['remaining_balance'], 3) ?></td>
                     <td><span class="badge <?= $inv['status'] === 'active' ? 'bg-success' : 'bg-danger' ?>"><?= ucfirst($inv['status']) ?></span></td>
                     <td class="text-center" style="white-space:nowrap;">
-                        <a href="<?= url('invoices/show.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-eye"></i></a>
-                        <a href="<?= url('invoices/edit.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-pencil"></i></a>
-                        <a href="<?= url('invoices/print.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-printer"></i></a>
+                        <a href="<?= url('invoices/show.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="View"><i class="bi bi-eye"></i></a>
+                        <a href="<?= url('invoices/edit.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Edit"><i class="bi bi-pencil"></i></a>
+                        <a href="<?= url('invoices/print.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Print"><i class="bi bi-printer"></i></a>
+                        <a href="<?= url('invoices/print1.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Receipt"><i class="bi bi-receipt"></i></a>
+                        <?php if ($inv['status'] === 'active'): ?>
+                            <a href="<?= url('invoices/delete.php?id=' . $inv['id']) ?>" 
+                               class="btn btn-sm btn-danger" 
+                               title="Delete"
+                               onclick="return confirmDelete('<?= htmlspecialchars($inv['invoice_no']) ?>')">
+                                <i class="bi bi-trash"></i>
+                            </a>
+                        <?php endif; ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -174,5 +183,11 @@ if ($lastPage > 1):
     </ul></nav>
 </div>
 <?php endif; ?>
+
+<script>
+function confirmDelete(invoiceNo) {
+    return confirm('Are you sure you want to delete/cancel invoice ' + invoiceNo + '?\n\nThis action will:\n• Mark the invoice as cancelled\n• Recalculate customer balance\n\nThis cannot be undone easily.');
+}
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

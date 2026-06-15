@@ -11,7 +11,6 @@ $customer_id = $_GET['customer_id'] ?? '';
 
 $pdo = getDB();
 
-// Get ALL customers
 $custSql = "SELECT id, name, contact, address, opening_balance as static_opening_balance FROM wax_customers WHERE 1=1";
 $custParams = [];
 
@@ -39,7 +38,6 @@ foreach ($allCustomers as $c) {
     ];
 }
 
-// Fetch Transaction Data
 $sql = "
     SELECT 
         c.id as customer_id,
@@ -82,13 +80,9 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-// FIXED: Removed reference usage to prevent data duplication
 foreach ($rows as $row) {
     $cid = $row['customer_id'];
-    
-    if (!isset($customers[$cid])) {
-        continue;
-    }
+    if (!isset($customers[$cid])) continue;
     
     $inv_id = $row['invoice_id'];
     
@@ -102,10 +96,7 @@ foreach ($rows as $row) {
     }
     
     $line_id = $row['item_db_id'];
-    
-    if (isset($customers[$cid]['invoices'][$inv_id]['lines'][$line_id])) {
-        continue;
-    }
+    if (isset($customers[$cid]['invoices'][$inv_id]['lines'][$line_id])) continue;
     
     $customers[$cid]['invoices'][$inv_id]['amount'] += $row['amount'];
     
@@ -138,7 +129,6 @@ foreach ($rows as $row) {
     $customers[$cid]['invoices'][$inv_id]['lines'][$line_id] = $line;
 }
 
-// FIXED: Build items array without references
 foreach (array_keys($customers) as $cid) {
     $customers[$cid]['items'] = [];
     $customers[$cid]['bill_total'] = 0;
@@ -152,7 +142,7 @@ foreach (array_keys($customers) as $cid) {
                     'wax_item_name' => $line['wax_name'] ?: '-',
                     'design_item_name' => $line['des_name'] ?: '-',
                     'wax_qty' => $line['wax_qty'],
-                    'wax_rate' => $line['wax_rate'] ?: 0, 
+                    'wax_rate' => $line['wax_rate'] ?: 0,
                     'design_qty' => $line['des_qty'],
                     'design_rate' => $line['des_rate'] ?: 0,
                     'amount' => $line['amount']
@@ -163,7 +153,6 @@ foreach (array_keys($customers) as $cid) {
     }
 }
 
-// FIXED: Calculate balances without references
 foreach (array_keys($customers) as $cid) {
     $stmtInv = $pdo->prepare("SELECT SUM(total_amount) FROM wax_invoices WHERE customer_id = ? AND invoice_date < ?");
     $stmtInv->execute([$cid, $start_date]);
@@ -185,80 +174,54 @@ foreach (array_keys($customers) as $cid) {
     $customers[$cid]['is_balance_only'] = empty($customers[$cid]['items']) && ($customers[$cid]['opening_balance'] != 0 || $customers[$cid]['closing_balance'] != 0);
 }
 
-// Filter customers
 $customers = array_filter($customers, function($cust) {
     return !empty($cust['items']) || $cust['opening_balance'] != 0 || $cust['closing_balance'] != 0 || $cust['current_payments'] != 0;
 });
 
-// Format functions
-function format_amount($num) {
-    return number_format(round($num), 0);
-}
+function format_amount($num) { return number_format(round($num), 0); }
+function format_rate($num) { return number_format($num, 2); }
+function format_wax_qty($num) { return number_format($num, 3); }
 
-function format_rate($num) {
-    return number_format($num, 2);
-}
-
-function format_wax_qty($num) {
-    return number_format($num, 3);
-}
-
-// Urdu number to words
 function number_to_urdu_words($number) {
     $number = abs(round($number));
-    
     if ($number == 0) return 'صفر روپے';
-    
-    $ones = ['', 'ایک', 'دو', 'تین', 'چار', 'پانچ', 'چھ', 'سات', 'آٹھ', 'نو'];
-    $tens = ['', '', 'بیس', 'تیس', 'چالیس', 'پچاس', 'ساٹھ', 'ستر', 'اسی', 'نوے'];
-    $teens = ['دس', 'گیارہ', 'بارہ', 'تیرہ', 'چودہ', 'پندرہ', 'سولہ', 'سترہ', 'اٹھارہ', 'انیس'];
-    
-    $words = '';
-    
-    if ($number >= 10000000) {
-        $crore = floor($number / 10000000);
-        $words .= number_to_urdu_words($crore) . ' کروڑ ';
-        $number %= 10000000;
-    }
-    
-    if ($number >= 100000) {
-        $lakh = floor($number / 100000);
-        $words .= number_to_urdu_words($lakh) . ' لاکھ ';
-        $number %= 100000;
-    }
-    
-    if ($number >= 1000) {
-        $thousand = floor($number / 1000);
-        $words .= number_to_urdu_words($thousand) . ' ہزار ';
-        $number %= 1000;
-    }
-    
-    if ($number >= 100) {
-        $hundred = floor($number / 100);
-        $words .= $ones[$hundred] . ' سو ';
-        $number %= 100;
-    }
-    
-    if ($number >= 20) {
-        $words .= $tens[floor($number / 10)] . ' ';
-        if ($number % 10 > 0) {
-            $words .= $ones[$number % 10] . ' ';
-        }
-    } elseif ($number >= 10) {
-        $words .= $teens[$number - 10] . ' ';
-    } elseif ($number > 0) {
-        $words .= $ones[$number] . ' ';
-    }
-    
-    return trim($words) . ' ';
+    return trim(_urdu_num_convert($number)) . ' روپے';
 }
 
-// Calculate totals for summary page
-$total_opening = 0;
-$total_debit = 0;
-$total_credit = 0;
-$total_closing = 0;
+function _urdu_num_convert($number) {
+    if ($number <= 0) return '';
+    $urdu = [
+        1 => 'ایک', 2 => 'دو', 3 => 'تین', 4 => 'چار', 5 => 'پانچ',
+        6 => 'چھ', 7 => 'سات', 8 => 'آٹھ', 9 => 'نو', 10 => 'دس',
+        11 => 'گیارہ', 12 => 'بارہ', 13 => 'تیرہ', 14 => 'چودہ', 15 => 'پندرہ',
+        16 => 'سولہ', 17 => 'سترہ', 18 => 'اٹھارہ', 19 => 'انیس', 20 => 'بیس',
+        21 => 'اکیس', 22 => 'بائیس', 23 => 'تئیس', 24 => 'چوبیس', 25 => 'پچیس',
+        26 => 'چھبیس', 27 => 'ستائیس', 28 => 'اٹھائیس', 29 => 'انتیس', 30 => 'تیس',
+        31 => 'اکتیس', 32 => 'بتیس', 33 => 'تینتیس', 34 => 'چونتیس', 35 => 'پینتیس',
+        36 => 'چھتیس', 37 => 'سینتیس', 38 => 'اڑتیس', 39 => 'انتالیس', 40 => 'چالیس',
+        41 => 'اکتالیس', 42 => 'بیالیس', 43 => 'تینتالیس', 44 => 'چوالیس', 45 => 'پینتالیس',
+        46 => 'چھیالیس', 47 => 'سینتالیس', 48 => 'اڑتالیس', 49 => 'انچاس', 50 => 'پچاس',
+        51 => 'اکیاون', 52 => 'باون', 53 => 'تریپن', 54 => 'چون', 55 => 'پچپن',
+        56 => 'چھپن', 57 => 'ستاون', 58 => 'اٹھاون', 59 => 'انسٹھ', 60 => 'ساٹھ',
+        61 => 'اکسٹھ', 62 => 'باسٹھ', 63 => 'تریسٹھ', 64 => 'چونسٹھ', 65 => 'پینسٹھ',
+        66 => 'چھیاسٹھ', 67 => 'سڑسٹھ', 68 => 'اڑسٹھ', 69 => 'انہتر', 70 => 'ستر',
+        71 => 'اکہتر', 72 => 'بہتر', 73 => 'تیہتر', 74 => 'چوہتر', 75 => 'پچہتر',
+        76 => 'چھیہتر', 77 => 'ستتر', 78 => 'اٹھہتر', 79 => 'اناسی', 80 => 'اسی',
+        81 => 'اکیاسی', 82 => 'بیاسی', 83 => 'تراسی', 84 => 'چوراسی', 85 => 'پچاسی',
+        86 => 'چھیاسی', 87 => 'ستاسی', 88 => 'اٹھاسی', 89 => 'نواسی', 90 => 'نوے',
+        91 => 'اکیانوے', 92 => 'بانوے', 93 => 'ترانوے', 94 => 'چورانوے', 95 => 'پچانوے',
+        96 => 'چھیانوے', 97 => 'ستانوے', 98 => 'اٹھانوے', 99 => 'ننانوے'
+    ];
+    $words = '';
+    if ($number >= 10000000) { $words .= _urdu_num_convert(floor($number / 10000000)) . ' کروڑ '; $number %= 10000000; }
+    if ($number >= 100000) { $words .= _urdu_num_convert(floor($number / 100000)) . ' لاکھ '; $number %= 100000; }
+    if ($number >= 1000) { $words .= _urdu_num_convert(floor($number / 1000)) . ' ہزار '; $number %= 1000; }
+    if ($number >= 100) { $words .= $urdu[floor($number / 100)] . ' سو '; $number %= 100; }
+    if ($number > 0 && $number <= 99) { $words .= $urdu[$number] . ' '; }
+    return $words;
+}
 
+$total_opening = 0; $total_debit = 0; $total_credit = 0; $total_closing = 0;
 foreach ($customers as $c) {
     $total_opening += $c['opening_balance'];
     $total_debit += $c['bill_total'];
@@ -270,471 +233,103 @@ foreach ($customers as $c) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Shamriz Bill Book - Client 2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M.J RP - Bill Book</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
-        
-        @page { size: A4; margin: 0; }
+        @page { size: A4 portrait; margin: 0; }
         * { box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background: #e0e0e0; font-size: 14px; }
-        
-        .page {
-            width: 210mm;
-            min-height: 297mm;
-            padding: 0;
-            margin: 10mm auto;
-            background: #fff;
-            position: relative;
-            box-shadow: 0 0 20px rgba(0,0,0,0.3);
-            overflow: hidden;
-            border: 3px solid #1B5E20;
-        }
-        
-        .watermark {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-30deg);
-            opacity: 0.04;
-            z-index: 0;
-            pointer-events: none;
-        }
-        .watermark img {
-            width: 350px;
-            height: auto;
-        }
-        
-        /* NEW DESIGN: Striped Header Pattern */
-        .header-stripe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 38mm;
-            background: linear-gradient(to right, 
-                #1B5E20 0%, 
-                #2E7D32 25%, 
-                #388E3C 50%, 
-                #2E7D32 75%, 
-                #1B5E20 100%);
-            z-index: 0;
-        }
-        
-        /* Diagonal stripes overlay */
-        .header-stripe::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 10px,
-                rgba(255,255,255,0.05) 10px,
-                rgba(255,255,255,0.05) 20px
-            );
-        }
-        
-        .header-accent-strip {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            height: 8px;
-            background: linear-gradient(to right, #FFA000, #FFB300, #FFC107, #FFB300, #FFA000);
-            z-index: 1;
-        }
-
-        .content-layer {
-            position: relative;
-            z-index: 2;
-            padding: 8mm 10mm;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 5mm;
-            padding-bottom: 3mm;
-            border-bottom: 3px double #FFA000;
-        }
-        
-        .company-info { text-align: left; }
-        .company-info h1 { 
-            margin: 0; 
-            font-size: 34px; 
-            color: #fff;
-            font-weight: 900; 
-            letter-spacing: 2px;
-            text-shadow: 3px 3px 6px rgba(0,0,0,0.4);
-            font-family: 'Georgia', serif;
-        }
-        .company-info .slogan {
-            color: #FFD54F;
-            font-style: italic;
-            font-size: 12px;
-            margin: 5px 0;
-            display: block;
-            letter-spacing: 0.5px;
-            font-weight: bold;
-        }
-        .company-info p { 
-            margin: 2px 0; 
-            font-size: 11px; 
-            color: rgba(255,255,255,0.95);
-            font-weight: 500;
-        }
-        
-        /* Square logo design instead of circle */
-        .logo-box {
-            width: 80px;
-            height: 80px;
-            border: 4px solid #FFA000;
-            border-radius: 10px;
-            padding: 6px;
-            background: linear-gradient(135deg, #fff 0%, #f5f5f5 100%);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-            transform: rotate(5deg);
-        }
-        .logo-box img { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: contain; 
-            border-radius: 6px;
-            transform: rotate(-5deg);
-        }
-
-        .customer-section {
-            display: flex;
-            border: 3px solid #2E7D32;
-            margin: 3mm 0;
-            border-radius: 0;
-            overflow: hidden;
-            background: #fff;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .cust-left {
-            flex: 1;
-            padding: 10px 15px;
-            border-right: 3px solid #2E7D32;
-            background: linear-gradient(to bottom, #f1f8f4, #fff);
-        }
-        .cust-right {
-            width: 35%;
-            background: #f1f8f4;
-        }
+        body { font-family: 'Segoe UI', 'Times New Roman', serif; margin: 0; padding: 0; background: #ccc; font-size: 14px; }
+        .page { width: 210mm; min-height: 297mm; padding: 0; margin: 10mm auto; background: #fff; position: relative; box-shadow: 0 0 20px rgba(139,0,0,0.15); overflow: hidden; }
+        .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); opacity: 0.04; z-index: 0; pointer-events: none; }
+        .watermark img { width: 300px; height: auto; }
+        .header-curve { position: absolute; top: 0; left: 0; width: 100%; height: 42mm; background: linear-gradient(135deg, #1a0505 0%, #3d0f0f 30%, #5a1a1a 60%, #7a1f1f 85%, #8B0000 100%); clip-path: polygon(0 0, 100% 0, 100% 100%, 100% 100%, 0 100%); z-index: 0; }
+        .header-accent { position: absolute; top: 0; left: 0; width: 100%; height: 42mm; background: linear-gradient(135deg, #B8860B 0%, #DAA520 25%, #FFD700 50%, #DAA520 75%, #B8860B 100%); clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 95%, 0 65%); z-index: 1; opacity: 0.15; }
+        .content-layer { position: relative; z-index: 2; padding: 7mm 8mm; height: 100%; display: flex; flex-direction: column; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5mm; padding-bottom: 3mm; }
+        .company-info { text-align: center; }
+        .company-info h1 { margin: 0; font-size: 30px; color: #fff; text-transform: uppercase; font-weight: bold; letter-spacing: 2px; text-shadow: 2px 2px 6px rgba(0,0,0,0.5); }
+        .company-info .slogan { color: #e8c84a; font-style: italic; font-size: 12px; margin: 4px 0; display: block; letter-spacing: 1px; }
+        .company-info p { margin: 2px 0; font-size: 11px; color: rgba(255,255,255,0.9); }
+        .logo-box { width: 70px; height: 70px; border: 3px solid #e8c84a; border-radius: 50%; padding: 4px; background: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.3); flex-shrink: 0; }
+        .logo-box img { width: 100%; height: 100%; object-fit: contain; border-radius: 50%; }
+        .customer-section { display: flex; border: 2px solid #8B0000; margin: 2mm 0; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .cust-left { flex: 1; padding: 8px 12px; border-right: 2px solid #8B0000; background: linear-gradient(to right, #FFF8E7, #fff); }
+        .cust-right { width: 35%; background: #FFF8E7; }
         .cust-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-        .cust-table td { padding: 4px 0; vertical-align: top; }
-        .cust-label { font-weight: bold; width: 70px; color: #1B5E20; }
+        .cust-table td { padding: 3px 0; vertical-align: top; }
+        .cust-label { font-weight: bold; width: 65px; color: #8B0000; font-size: 13px; }
         .cust-value { color: #333; }
-        
-        .invoice-header {
-            background: linear-gradient(to right, #2E7D32, #388E3C);
-            color: #FFD54F;
-            text-align: center;
-            font-weight: bold;
-            font-size: 14px;
-            padding: 10px;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-            border-bottom: 3px solid #FFA000;
-        }
+        .invoice-header { background: linear-gradient(135deg, #4a0f0f, #2d0a0a); color: #FFD700; text-align: center; font-weight: bold; font-size: 14px; padding: 6px; letter-spacing: 2px; text-transform: uppercase; }
         .invoice-details-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        .invoice-details-table td { padding: 6px 10px; border-bottom: 1px solid #c8e6c9; color: #333; }
+        .invoice-details-table td { padding: 4px 8px; border-bottom: 1px solid #e0c0a0; color: #333; }
         .invoice-details-table tr:last-child td { border-bottom: none; }
-
-        /* New Balance Box Design - Flat with borders */
-        .balance-summary-box {
-            background: #fff;
-            border: 4px solid #2E7D32;
-            border-radius: 0;
-            padding: 12px 15px;
-            margin: 3mm 0;
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            box-shadow: inset 0 0 0 2px #FFB300;
-        }
-        .balance-item {
-            text-align: center;
-            padding: 10px 15px;
-            position: relative;
-        }
-        .balance-item.opening::after {
-            content: '';
-            position: absolute;
-            right: 0;
-            top: 10%;
-            height: 80%;
-            width: 2px;
-            background: #c8e6c9;
-        }
-        .balance-item.closing::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 10%;
-            height: 80%;
-            width: 2px;
-            background: #c8e6c9;
-        }
-        .balance-label {
-            font-size: 11px;
-            color: #2E7D32;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 5px;
-            font-weight: 900;
-            font-family: Arial, sans-serif;
-        }
-        .balance-label-urdu {
-            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif;
-            font-size: 13px;
-            display: block;
-            direction: rtl;
-            color: #1B5E20;
-        }
-        .balance-amount {
-            font-size: 22px;
-            font-weight: bold;
-            color: #1B5E20;
-            font-family: 'Georgia', serif;
-        }
-        .balance-amount.positive { color: #D32F2F; }
-        .balance-amount.negative { color: #388E3C; }
-        .balance-item.closing .balance-amount {
-            font-size: 26px;
-            color: #FF6F00;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
-        }
-
-        /* Table with alternating green stripes */
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            border: 3px solid #2E7D32;
-            margin-bottom: 5px;
-            flex: 1;
-            font-size: 12px;
-        }
-        .items-table th {
-            background: linear-gradient(to bottom, #2E7D32, #1B5E20);
-            color: #FFD54F;
-            padding: 8px 4px;
-            font-size: 11px;
-            border: 1px solid #2E7D32;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-family: Arial, sans-serif;
-            font-weight: bold;
-        }
-        .items-table th.urdu-header {
-            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif;
-            font-size: 12px;
-            direction: rtl;
-        }
-        .items-table td {
-            border: 1px solid #a5d6a7;
-            padding: 6px 4px;
-            vertical-align: middle;
-            text-align: center;
-            background: #fff;
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-        }
-        .items-table td.urdu-cell {
-            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif;
-            font-size: 12px;
-            direction: rtl;
-        }
-        .items-table tbody tr:nth-child(even) td { background-color: #f1f8f4; }
-        .items-table tbody tr:hover td { background-color: #e8f5e9; }
-
-        /* Summary Table - Orange accent */
-        .summary-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 5px;
-            border: 2px solid #2E7D32;
-        }
-        .summary-table td {
-            padding: 8px 12px;
-            border: 1px solid #a5d6a7;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-        }
-        .summary-row { background: #f1f8f4; }
-        .summary-row td:first-child { text-align: right; font-weight: 600; color: #1B5E20; }
+        .balance-summary-box { background: linear-gradient(135deg, #2d0a0a 0%, #1a0505 50%, #3d0f0f 100%); border: 3px solid #FFD700; box-shadow: 0 4px 20px rgba(139,0,0,0.3); border-radius: 10px; padding: 10px 12px; margin: 2mm 0; display: flex; justify-content: space-around; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .balance-item { text-align: center; padding: 6px 12px; }
+        .balance-item.opening { border-right: 2px solid rgba(255,215,0,0.4); }
+        .balance-item.closing { border-left: 2px solid rgba(255,215,0,0.4); }
+        .balance-label { font-size: 11px; color: #FFD700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: bold; font-family: Arial, sans-serif; }
+        .balance-label-urdu { font-family: 'Noto Nastaliq Urdu', Arial, sans-serif; font-size: 13px; display: block; direction: rtl; }
+        .balance-amount { font-size: 20px; font-weight: bold; color: #fff; font-family: Arial, sans-serif; }
+        .balance-amount.positive { color: #FF4444; }
+        .balance-amount.negative { color: #32CD32; }
+        .balance-item.closing .balance-amount { font-size: 24px; text-shadow: 0 0 15px rgba(255,215,0,0.6); }
+        .items-table { width: 100%; border-collapse: collapse; border: 2px solid #8B0000; margin-bottom: 4px; font-size: 13px; }
+        .items-table th { background: linear-gradient(135deg, #4a0f0f, #2d0a0a); color: #FFD700; padding: 7px 5px; font-size: 11px; border: 1px solid #8B0000; text-transform: uppercase; letter-spacing: 0.3px; font-family: Arial, sans-serif; }
+        .items-table th.urdu-header { font-family: 'Noto Nastaliq Urdu', Arial, sans-serif; font-size: 12px; direction: rtl; }
+        .items-table td { border: 1px solid #e0c0a0; padding: 5px 4px; vertical-align: middle; text-align: center; background: #fff; font-family: Arial, sans-serif; font-size: 13px; }
+        .items-table td.urdu-cell { font-family: 'Noto Nastaliq Urdu', Arial, sans-serif; font-size: 14px; direction: rtl; line-height: 1.8; }
+        .items-table tbody tr:nth-child(even) td { background-color: #FFF8E7; }
+        .items-table td.amt-cell { font-weight: 700; font-size: 14px; color: #8B0000; }
+        .items-table .sub-header { font-size: 10px; padding: 4px 3px; background: linear-gradient(135deg, #6b1515, #4a0f0f); }
+        .bill-summary-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .bill-summary-table td { padding: 7px 10px; border: 1px solid #8B0000; font-family: Arial, sans-serif; font-size: 14px; }
+        .summary-row { background: #FFF8E7; }
+        .summary-row td:first-child { text-align: right; font-weight: 500; }
         .summary-row td:last-child { text-align: right; width: 130px; }
-        
-        .closing-row {
-            background: linear-gradient(to right, #FFA000, #FFB300) !important;
-        }
-        .closing-row td {
-            color: #1B5E20 !important;
-            font-weight: bold;
-            font-size: 16px;
-            padding: 12px;
-        }
-        
-        .payment-row td { color: #388E3C; font-weight: 600; }
-
-        .words-section {
-            background: linear-gradient(to right, #f1f8f4, #fff);
-            border: 2px solid #a5d6a7;
-            border-left: 5px solid #2E7D32;
-            border-radius: 0;
-            padding: 10px 15px;
-            font-size: 16px;
-            margin: 8px 0;
-            text-align: right;
-            direction: rtl;
-            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif;
-            color: #1B5E20;
-            font-weight: bold;
-        }
-
-        .bottom-section {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 2px dashed #2E7D32;
-        }
-        .signature { text-align: center; width: 180px; }
-        .signature img {
-            max-width: 120px;
-            max-height: 60px;
-            object-fit: contain;
-        }
-        .signature-line { 
-            border-top: 3px double #2E7D32; 
-            margin-top: 5px; 
-            padding-top: 5px; 
-            font-size: 13px; 
-            font-weight: bold;
-            color: #1B5E20;
-        }
-
-        .balance-only-page .balance-summary-box {
-            margin: 15mm 0;
-            padding: 25px;
-        }
-        .balance-only-page .balance-item {
-            padding: 15px 30px;
-        }
-        .balance-only-page .balance-amount {
-            font-size: 32px;
-        }
-        .balance-only-page .balance-item.closing .balance-amount {
-            font-size: 36px;
-        }
-        .balance-only-message {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-style: italic;
-            font-size: 16px;
-            background: #f1f8f4;
-            border-radius: 0;
-            margin: 8mm 0;
-            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif;
-            border: 2px dashed #a5d6a7;
-        }
-
-        /* Summary Page */
-        .summary-page-title {
-            background: linear-gradient(to right, #1B5E20, #2E7D32, #388E3C, #2E7D32, #1B5E20);
-            color: #FFD54F;
-            text-align: center;
-            padding: 15px;
-            border-radius: 0;
-            margin: 10px 0;
-            font-size: 22px;
-            font-weight: bold;
-            letter-spacing: 2px;
-            border-top: 4px solid #FFA000;
-            border-bottom: 4px solid #FFA000;
-        }
-        
-        .summary-period {
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 14px;
-            color: #1B5E20;
-            font-weight: 600;
-        }
-        
-        .summary-stats {
-            margin-top: 15px;
-            padding: 12px;
-            background: #f1f8f4;
-            border-radius: 0;
-            font-size: 14px;
-            border: 2px solid #a5d6a7;
-            border-left: 5px solid #2E7D32;
-        }
-        
-        .summary-footer-row {
-            background: linear-gradient(to right, #FFA000, #FFB300, #FFC107) !important;
-        }
-        
-        .summary-footer-row td {
-            font-weight: bold;
-            color: #1B5E20 !important;
-            padding: 12px !important;
-        }
-
-        .no-print {
-            text-align: center;
-            padding: 15px;
-            background: linear-gradient(to right, #1B5E20, #2E7D32);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            border-bottom: 4px solid #FFA000;
-        }
-        .no-print button {
-            padding: 12px 25px;
-            font-size: 16px;
-            cursor: pointer;
-            border: none;
-            border-radius: 5px;
-            margin: 0 10px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-        .btn-print {
-            background: #FFA000;
-            color: #1B5E20;
-        }
-        .btn-export {
-            background: #388E3C;
-            color: #fff;
-        }
-        .no-print button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        }
-        
-        .export-progress {
-            display: none;
-            color: #FFD54F;
-            margin-top: 10px;
-            font-size: 14px;
-        }
+        .bill-closing-row { background: linear-gradient(135deg, #DAA520, #FFD700, #DAA520) !important; }
+        .bill-closing-row td { color: #2d0a0a !important; font-weight: bold; font-size: 16px; padding: 10px; }
+        .payment-row td { color: #228B22; }
+        .continued-notice { text-align: center; padding: 8px; font-style: italic; color: #8B0000; font-size: 12px; border-top: 1px dashed #ccc; margin-top: 4px; letter-spacing: 0.5px; }
+        .words-section { background: #FFF8E7; border: 1px solid #dee2e6; border-radius: 5px; padding: 8px 12px; font-size: 16px; margin: 6px 0; text-align: right; direction: rtl; font-family: 'Noto Nastaliq Urdu', Arial, sans-serif; color: #333; line-height: 2; }
+        .bottom-section { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 8px; }
+        .signature { text-align: center; width: 160px; }
+        .signature img { max-width: 100px; max-height: 50px; object-fit: contain; }
+        .signature-line { border-top: 2px solid #8B0000; margin-top: 4px; padding-top: 4px; font-size: 12px; font-weight: bold; color: #8B0000; }
+        .balance-only-page .balance-summary-box { margin: 12mm 0; padding: 20px; }
+        .balance-only-page .balance-item { padding: 12px 25px; }
+        .balance-only-page .balance-amount { font-size: 28px; }
+        .balance-only-page .balance-item.closing .balance-amount { font-size: 32px; }
+        .balance-only-message { text-align: center; padding: 18px; color: #666; font-style: italic; font-size: 16px; background: #FFF8E7; border-radius: 8px; margin: 6mm 0; font-family: 'Noto Nastaliq Urdu', Arial, sans-serif; line-height: 2; }
+        .summary-page-title { background: linear-gradient(135deg, #4a0f0f, #2d0a0a); color: #FFD700; text-align: center; padding: 12px; border-radius: 8px; margin: 8px 0; font-size: 20px; font-weight: bold; letter-spacing: 2px; }
+        .summary-period { text-align: center; margin-bottom: 8px; font-size: 14px; color: #666; }
+        .summary-stats { margin-top: 12px; padding: 10px; background: #FFF8E7; border-radius: 8px; font-size: 14px; line-height: 1.8; }
+        .summary-footer-row { background: linear-gradient(135deg, #DAA520, #FFD700, #DAA520) !important; }
+        .summary-footer-row td { font-weight: bold; color: #2d0a0a !important; padding: 10px !important; font-size: 14px; }
+        .summary-customers-table { width: 100%; border-collapse: collapse; border: 2px solid #8B0000; font-size: 13px; }
+        .summary-customers-table th { background: linear-gradient(135deg, #4a0f0f, #2d0a0a); color: #FFD700; padding: 10px 6px; font-size: 12px; border: 1px solid #8B0000; text-transform: uppercase; letter-spacing: 0.5px; font-family: Arial, sans-serif; }
+        .summary-customers-table td { border: 1px solid #e0c0a0; padding: 8px 6px; vertical-align: middle; font-family: Arial, sans-serif; font-size: 14px; }
+        .summary-customers-table tbody tr:nth-child(even) td { background-color: #FFF8E7; }
+        .summary-customers-table tbody tr:hover td { background-color: #F0E68C; }
+        .no-print { text-align: center; padding: 15px; background: linear-gradient(135deg, #4a0f0f, #2d0a0a); position: sticky; top: 0; z-index: 1000; }
+        .no-print button { padding: 12px 25px; font-size: 15px; cursor: pointer; border: none; border-radius: 8px; margin: 0 8px; font-weight: bold; transition: all 0.3s ease; }
+        .btn-print { background: #d4af37; color: #3a0a0a; }
+        .btn-export { background: #28a745; color: #fff; }
+        .no-print button:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+        .export-progress { display: none; color: #fff; margin-top: 10px; font-size: 14px; }
         .export-progress.show { display: block; }
-
+        .page-export-btn { position: absolute; top: 10px; right: 10px; z-index: 100; background: linear-gradient(135deg, #8B0000, #B22222); color: #fff; border: none; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,0.3); transition: all 0.3s ease; display: flex; align-items: center; gap: 5px; }
+        .page-export-btn:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
+        .page-export-btn:active { transform: translateY(0) scale(0.98); }
+        .page-export-btn.exporting { background: #6c757d; pointer-events: none; }
+        .page-export-btn .icon { font-size: 14px; }
         @media print {
             body { background: none; margin: 0; }
             .page { margin: 0; border: none; box-shadow: none; page-break-after: always; height: 297mm; }
-            .no-print { display: none !important; }
+            .no-print, .page-export-btn { display: none !important; }
+            .header-curve, .header-accent, .items-table th, .summary-customers-table th, .balance-summary-box, .bill-closing-row, .summary-footer-row { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -749,111 +344,79 @@ foreach ($customers as $c) {
 </div>
 
 <?php
-$max_rows = 18;
+$max_rows = 21;
 $page_counter = 0;
-
-// ============ SUMMARY PAGE ============
 $page_counter++;
 ?>
 
-<div class="page" id="bill-page-<?= $page_counter ?>" data-customer="Summary_Report">
-    <div class="watermark">
-        <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Watermark">
-    </div>
-    
-    <div class="header-stripe">
-        <div class="header-accent-strip"></div>
-    </div>
-    
+<div class="page" id="bill-page-<?= $page_counter ?>" data-customer="0Summary Report">
+    <button class="page-export-btn" onclick="exportSinglePage('bill-page-<?= $page_counter ?>', '0Summary Report')">
+        <span class="icon">📷</span> Export JPG
+    </button>
+    <div class="watermark"><img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Watermark" crossorigin="anonymous"></div>
+    <div class="header-curve"></div>
+    <div class="header-accent"></div>
     <div class="content-layer">
-        
         <div class="header-content">
             <div class="company-info">
-                <h1>M.J Casting</h1>
+                <h1>M.J RP</h1>
                 <span class="slogan">All Kind of Jewellries Designing & 3D Printer Wax Available</span>
-                <p>Shop # 882  Ateeq Center,Rang Mahal Lahore</p>
+                <p>Shop # 882 Ateeq Center, Rang Mahal Lahore</p>
                 <p>+92 302-4098908 | +92 322-4773342</p>
             </div>
-            <div class="logo-box">
-                <img src="https://punjabrp.altafhussain-co.com/assets/2.png" alt="Logo">
-            </div>
+            <div class="logo-box"><img src="https://mjcasting.altafhussain-co.com/wax/assets/2.png" alt="Logo" crossorigin="anonymous"></div>
         </div>
-
-        <div class="summary-page-title">
-            📊 CUSTOMERS SUMMARY REPORT | تمام گاہکوں کا خلاصہ
-        </div>
-        
-        <div class="summary-period">
-            <strong>Period:</strong> <?= date('d-M-Y', strtotime($start_date)) ?> to <?= date('d-M-Y', strtotime($end_date)) ?>
-        </div>
-
-        <table class="items-table" style="font-size: 12px;">
+        <div class="summary-page-title">📊 CUSTOMERS SUMMARY | تمام گاہکوں کا خلاصہ</div>
+        <div class="summary-period"><strong>Period:</strong> <?= date('d-M-Y', strtotime($start_date)) ?> to <?= date('d-M-Y', strtotime($end_date)) ?></div>
+        <table class="summary-customers-table">
             <thead>
                 <tr>
-                    <th width="5%">Sr#</th>
-                    <th width="35%" style="text-align: left; padding-left: 8px;">Customer Name<br>گاہک کا نام</th>
-                    <th width="15%">Opening Bal<br>سابقہ بیلنس</th>
-                    <th width="15%">Debit (Bill)<br>ڈیبٹ</th>
-                    <th width="15%">Credit (Pay)<br>کریڈٹ</th>
-                    <th width="15%">Closing Bal<br>موجودہ بیلنس</th>
+                    <th width="6%">Sr</th>
+                    <th width="30%" style="text-align:left;padding-left:8px;">Customer<br><span style="font-size:10px;opacity:0.8;">گاہک</span></th>
+                    <th width="16%">Opening<br><span style="font-size:10px;opacity:0.8;">سابقہ</span></th>
+                    <th width="16%">Debit<br><span style="font-size:10px;opacity:0.8;">ڈیبٹ</span></th>
+                    <th width="16%">Credit<br><span style="font-size:10px;opacity:0.8;">کریڈٹ</span></th>
+                    <th width="16%">Closing<br><span style="font-size:10px;opacity:0.8;">بیلنس</span></th>
                 </tr>
             </thead>
             <tbody>
                 <?php $sr = 1; foreach ($customers as $c): ?>
                 <tr>
-                    <td style="font-size: 13px;"><?= $sr++ ?></td>
-                    <td style="text-align: left; padding-left: 8px; font-weight: 500; font-size: 13px;"><?= htmlspecialchars($c['name']) ?></td>
-                    <td style="color: <?= $c['opening_balance'] >= 0 ? '#D32F2F' : '#388E3C' ?>; font-size: 13px;">
-                        <?= format_amount(abs($c['opening_balance'])) ?>
-                        <?= $c['opening_balance'] >= 0 ? '' : '' ?>
-                    </td>
-                    <td style="font-size: 13px;"><?= format_amount($c['bill_total']) ?></td>
-                    <td style="color: #388E3C; font-size: 13px;"><?= format_amount($c['current_payments']) ?></td>
-                    <td style="font-weight: bold; color: <?= $c['closing_balance'] >= 0 ? '#D32F2F' : '#388E3C' ?>; font-size: 13px;">
-                        <?= format_amount(abs($c['closing_balance'])) ?>
-                        <?= $c['closing_balance'] >= 0 ? '' : '' ?>
-                    </td>
+                    <td style="font-size:13px;"><?= $sr++ ?></td>
+                    <td style="text-align:left;padding-left:8px;font-weight:600;font-size:14px;"><?= htmlspecialchars($c['name']) ?></td>
+                    <td style="text-align:center;color:<?= $c['opening_balance'] >= 0 ? '#dc3545' : '#28a745' ?>;font-weight:600;"><?= format_amount(abs($c['opening_balance'])) ?></td>
+                    <td style="text-align:center;font-weight:500;"><?= format_amount($c['bill_total']) ?></td>
+                    <td style="text-align:center;color:#28a745;font-weight:600;"><?= format_amount($c['current_payments']) ?></td>
+                    <td style="text-align:center;font-weight:bold;font-size:15px;color:<?= $c['closing_balance'] >= 0 ? '#dc3545' : '#28a745' ?>;"><?= format_amount(abs($c['closing_balance'])) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
             <tfoot>
                 <tr class="summary-footer-row">
-                    <td colspan="2" style="text-align: right; padding-right: 10px; font-size: 14px;">
-                        <strong>GRAND TOTAL | کل رقم</strong>
-                    </td>
-                    <td style="font-size: 14px;">
-                        <?= format_amount(abs($total_opening)) ?>
-                        <?= $total_opening >= 0 ? '' : '' ?>
-                    </td>
-                    <td style="font-size: 14px;"><?= format_amount($total_debit) ?></td>
-                    <td style="font-size: 14px;"><?= format_amount($total_credit) ?></td>
-                    <td style="font-size: 15px;">
-                        <?= format_amount(abs($total_closing)) ?>
-                        <?= $total_closing >= 0 ? '' : '' ?>
-                    </td>
+                    <td colspan="2" style="text-align:right;padding-right:10px;"><strong>TOTAL | کل رقم</strong></td>
+                    <td style="text-align:center;font-size:14px;"><?= format_amount(abs($total_opening)) ?></td>
+                    <td style="text-align:center;"><?= format_amount($total_debit) ?></td>
+                    <td style="text-align:center;"><?= format_amount($total_credit) ?></td>
+                    <td style="text-align:center;font-size:15px;"><?= format_amount(abs($total_closing)) ?></td>
                 </tr>
             </tfoot>
         </table>
-
         <div class="summary-stats">
-            <strong>Total Customers:</strong> <?= count($customers) ?> | 
-            <strong>Total Receivable:</strong> <?= format_amount(abs($total_closing)) ?> <?= $total_closing >= 0 ? '(DR)' : '(CR)' ?> |
-            <strong>Total Bills:</strong> <?= format_amount($total_debit) ?> |
+            <strong>Total Customers:</strong> <?= count($customers) ?> &nbsp;|&nbsp;
+            <strong>Total Receivable:</strong> <?= format_amount(abs($total_closing)) ?><br>
+            <strong>Total Bills:</strong> <?= format_amount($total_debit) ?> &nbsp;|&nbsp;
             <strong>Total Payments:</strong> <?= format_amount($total_credit) ?>
         </div>
-
         <div class="bottom-section">
             <div class="signature">
-                <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Signature">
+                <img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Signature" crossorigin="anonymous">
                 <div class="signature-line">Authorized Signature</div>
             </div>
         </div>
-
     </div>
 </div>
 
 <?php
-// ============ INDIVIDUAL CUSTOMER BILLS ============
 foreach ($customers as $cust):
     $items = $cust['items'];
     $total_items = count($items);
@@ -862,34 +425,27 @@ foreach ($customers as $cust):
     if ($is_balance_only):
         $page_counter++;
 ?>
-
 <div class="page balance-only-page" id="bill-page-<?= $page_counter ?>" data-customer="<?= htmlspecialchars($cust['name']) ?>">
-    <div class="watermark">
-        <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Watermark">
-    </div>
-    
-    <div class="header-stripe">
-        <div class="header-accent-strip"></div>
-    </div>
-    
+    <button class="page-export-btn" onclick="exportSinglePage('bill-page-<?= $page_counter ?>', '<?= htmlspecialchars(addslashes($cust['name'])) ?>')">
+        <span class="icon">📷</span> Export JPG
+    </button>
+    <div class="watermark"><img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Watermark" crossorigin="anonymous"></div>
+    <div class="header-curve"></div>
+    <div class="header-accent"></div>
     <div class="content-layer">
-        
         <div class="header-content">
             <div class="company-info">
-                <h1>M.J Casting</h1>
+                <h1>M.J RP</h1>
                 <span class="slogan">All Kind of Jewellries Designing & 3D Printer Wax Available</span>
-                <p>Shop # 01 Bahadara Market, Hingna Street, Rang Mahal Lahore</p>
-                <p>+92 324-4980860 | +92 322-3220582</p>
+                <p>Shop # 882 Ateeq Center, Rang Mahal Lahore</p>
+                <p>+92 302-4098908 | +92 322-4773342</p>
             </div>
-            <div class="logo-box">
-                <img src="https://punjabrp.altafhussain-co.com/assets/2.png" alt="Logo">
-            </div>
+            <div class="logo-box"><img src="https://mjcasting.altafhussain-co.com/wax/assets/2.png" alt="Logo" crossorigin="anonymous"></div>
         </div>
-
         <div class="customer-section">
             <div class="cust-left">
                 <table class="cust-table">
-                    <tr><td class="cust-label">Name:</td><td class="cust-value"><strong style="font-size: 16px;"><?= htmlspecialchars($cust['name']) ?></strong></td></tr>
+                    <tr><td class="cust-label">Name:</td><td class="cust-value"><strong style="font-size:16px;"><?= htmlspecialchars($cust['name']) ?></strong></td></tr>
                     <tr><td class="cust-label">Address:</td><td class="cust-value"><?= htmlspecialchars($cust['address'] ?? 'N/A') ?></td></tr>
                 </table>
             </div>
@@ -901,57 +457,30 @@ foreach ($customers as $cust):
                 </table>
             </div>
         </div>
-
-        <div class="balance-only-message">
-            اس مدت میں کوئی لین دین نہیں ہوا - No transactions during this period
-        </div>
-
+        <div class="balance-only-message">اس مدت میں کوئی لین دین نہیں ہوا — No transactions during this period</div>
         <div class="balance-summary-box">
             <div class="balance-item opening">
-                <div class="balance-label">
-                    <span class="balance-label-urdu">سابقہ بیلنس</span>
-                    Opening Balance
-                </div>
-                <div class="balance-amount <?= $cust['opening_balance'] >= 0 ? 'positive' : 'negative' ?>">
-                    <?= format_amount(abs($cust['opening_balance'])) ?>
-                    <?= $cust['opening_balance'] >= 0 ? '(DR)' : '(CR)' ?>
-                </div>
+                <div class="balance-label"><span class="balance-label-urdu">سابقہ بیلنس</span>Opening Balance</div>
+                <div class="balance-amount <?= $cust['opening_balance'] >= 0 ? 'positive' : 'negative' ?>"><?= format_amount(abs($cust['opening_balance'])) ?></div>
             </div>
             <div class="balance-item">
-                <div class="balance-label">
-                    <span class="balance-label-urdu">وصولی</span>
-                    Payment
-                </div>
-                <div class="balance-amount" style="color: #388E3C;">
-                    <?= format_amount($cust['current_payments']) ?>
-                </div>
+                <div class="balance-label"><span class="balance-label-urdu">وصولی</span>Payment</div>
+                <div class="balance-amount" style="color:#51cf66;"><?= format_amount($cust['current_payments']) ?></div>
             </div>
             <div class="balance-item closing">
-                <div class="balance-label">
-                    <span class="balance-label-urdu">موجودہ بیلنس</span>
-                    Closing Balance
-                </div>
-                <div class="balance-amount <?= $cust['closing_balance'] >= 0 ? 'positive' : 'negative' ?>">
-                    <?= format_amount(abs($cust['closing_balance'])) ?>
-                    <?= $cust['closing_balance'] >= 0 ? '(DR)' : '(CR)' ?>
-                </div>
+                <div class="balance-label"><span class="balance-label-urdu">موجودہ بیلنس</span>Closing Balance</div>
+                <div class="balance-amount <?= $cust['closing_balance'] >= 0 ? 'positive' : 'negative' ?>"><?= format_amount(abs($cust['closing_balance'])) ?></div>
             </div>
         </div>
-
-        <div class="words-section">
-            <?= number_to_urdu_words($cust['closing_balance']) ?>روپے
-        </div>
-
+        <div class="words-section"><?= number_to_urdu_words($cust['closing_balance']) ?></div>
         <div class="bottom-section">
             <div class="signature">
-                <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Signature">
+                <img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Signature" crossorigin="anonymous">
                 <div class="signature-line">Authorized Signature</div>
             </div>
         </div>
-
     </div>
 </div>
-
 <?php
     else:
         $total_pages = ceil($total_items / $max_rows);
@@ -963,34 +492,27 @@ foreach ($customers as $cust):
             $is_last_page = ($page_num == $total_pages);
             $page_counter++;
 ?>
-
-<div class="page" id="bill-page-<?= $page_counter ?>" data-customer="<?= htmlspecialchars($cust['name']) ?>">
-    <div class="watermark">
-        <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Watermark">
-    </div>
-    
-    <div class="header-stripe">
-        <div class="header-accent-strip"></div>
-    </div>
-    
+<div class="page" id="bill-page-<?= $page_counter ?>" data-customer="<?= htmlspecialchars($cust['name']) ?>" data-page-num="<?= $page_num ?>" data-total-pages="<?= $total_pages ?>">
+    <button class="page-export-btn" onclick="exportSinglePage('bill-page-<?= $page_counter ?>', '<?= htmlspecialchars(addslashes($cust['name'])) ?><?= $total_pages > 1 ? '_Page' . $page_num : '' ?>')">
+        <span class="icon">📷</span> Export JPG
+    </button>
+    <div class="watermark"><img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Watermark" crossorigin="anonymous"></div>
+    <div class="header-curve"></div>
+    <div class="header-accent"></div>
     <div class="content-layer">
-        
         <div class="header-content">
             <div class="company-info">
-                <h1>M.J Casting</h1>
+                <h1>M.J RP</h1>
                 <span class="slogan">All Kind of Jewellries Designing & 3D Printer Wax Available</span>
-                <p>Shop # 01 Bahadara Market, Hingna Street, Rang Mahal Lahore</p>
-                <p>+92 324-4980860 | +92 322-3220582</p>
+                <p>Shop # 882 Ateeq Center, Rang Mahal Lahore</p>
+                <p>+92 302-4098908 | +92 322-4773342</p>
             </div>
-            <div class="logo-box">
-                <img src="https://punjabrp.altafhussain-co.com/assets/2.png" alt="Logo">
-            </div>
+            <div class="logo-box"><img src="https://mjcasting.altafhussain-co.com/wax/assets/2.png" alt="Logo" crossorigin="anonymous"></div>
         </div>
-
         <div class="customer-section">
             <div class="cust-left">
                 <table class="cust-table">
-                    <tr><td class="cust-label">Name:</td><td class="cust-value"><strong style="font-size: 16px;"><?= htmlspecialchars($cust['name']) ?></strong></td></tr>
+                    <tr><td class="cust-label">Name:</td><td class="cust-value"><strong style="font-size:16px;"><?= htmlspecialchars($cust['name']) ?></strong></td></tr>
                     <tr><td class="cust-label">Address:</td><td class="cust-value"><?= htmlspecialchars($cust['address'] ?? 'N/A') ?></td></tr>
                 </table>
             </div>
@@ -998,235 +520,272 @@ foreach ($customers as $cust):
                 <div class="invoice-header">Invoice</div>
                 <table class="invoice-details-table">
                     <tr><td><strong>Page:</strong> <?= $page_num ?> / <?= $total_pages ?></td></tr>
-                    <tr><td><strong>Period:</strong> <?= date('d-M-Y', strtotime($start_date)) ?> - <?= date('d-M-Y', strtotime($end_date)) ?></td></tr>
+                    <tr><td><strong>Period:</strong> <?= date('d-M', strtotime($start_date)) ?> - <?= date('d-M', strtotime($end_date)) ?>, <?= date('Y', strtotime($start_date)) ?></td></tr>
                 </table>
             </div>
         </div>
-
         <?php if ($page_num == 1): ?>
-        <div class="balance-summary-box" style="padding: 8px 12px;">
-            <div class="balance-item opening" style="padding: 5px 15px;">
-                <div class="balance-label">
-                     سابقہ بیلنس | Opening Balance
-                </div>
-                <div class="balance-amount <?= $cust['opening_balance'] >= 0 ? 'positive' : 'negative' ?>" style="font-size: 20px;">
-                    <?= format_amount(abs($cust['opening_balance'])) ?>
-                    <?= $cust['opening_balance'] >= 0 ? '(DR)' : '(CR)' ?>
-                </div>
+        <div class="balance-summary-box" style="padding:6px 10px;">
+            <div class="balance-item opening" style="padding:4px 12px;border-right:none;">
+                <div class="balance-label">سابقہ بیلنس | Opening Balance</div>
+                <div class="balance-amount <?= $cust['opening_balance'] >= 0 ? 'positive' : 'negative' ?>" style="font-size:18px;"><?= format_amount(abs($cust['opening_balance'])) ?></div>
             </div>
         </div>
         <?php endif; ?>
-
         <table class="items-table">
             <thead>
                 <tr>
-                    <th width="8%">Date</th>
-                    <th width="5%">Bill#</th>
-                    <th width="14%">Wax</th>
-                    <th width="14%">Design</th>
-                    <th width="7%">Wax Wt</th>
-                    <th width="7%">Rate</th>
-                    <th width="9%">Wax Amt</th>
-                    <th width="6%">Qty</th>
-                    <th width="7%">Rate</th>
-                    <th width="9%">Des Amt</th>
-                    <th width="10%">Total</th>
+                    <th width="9%" rowspan="2">Date<br><span style="font-size:9px;">تاریخ</span></th>
+                    <th width="5%" rowspan="2">Bill</th>
+                    <th colspan="3" style="border-bottom:2px solid #d4af37;">🔶 Wax (ویکس)</th>
+                    <th colspan="3" style="border-bottom:2px solid #51cf66;">🔷 Design (ڈیزائن)</th>
+                    <th width="13%" rowspan="2" style="background:linear-gradient(135deg,#2c5530,#1a3a20);">Total<br><span style="font-size:10px;">کل رقم</span></th>
+                </tr>
+                <tr class="sub-header">
+                    <th width="12%">Item</th>
+                    <th width="8%">Wt/Qty</th>
+                    <th width="8%">Rate</th>
+                    <th width="13%">Item</th>
+                    <th width="7%">Qty</th>
+                    <th width="8%">Rate</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($page_items as $item): 
+                <?php foreach ($page_items as $item):
                     $wQty = $item['wax_qty'] > 0 ? format_wax_qty((float)$item['wax_qty']) : '-';
                     $dQty = $item['design_qty'] > 0 ? round($item['design_qty']) : '-';
                     $wRate = $item['wax_rate'] > 0 ? format_rate($item['wax_rate']) : '-';
                     $dRate = $item['design_rate'] > 0 ? format_rate($item['design_rate']) : '-';
-                    
-                    $wAmt = round($item['wax_qty'] * $item['wax_rate']);
-                    $dAmt = round($item['design_qty'] * $item['design_rate']);
-                    
-                    $wAmtStr = $wAmt > 0 ? format_amount($wAmt) : '-';
-                    $dAmtStr = $dAmt > 0 ? format_amount($dAmt) : '-';
-
                     $waxName = $item['wax_item_name'] ?: '-';
                     $desName = $item['design_item_name'] ?: '-';
                 ?>
                 <tr>
-                    <td><?= date('d-M', strtotime($item['invoice_date'])) ?></td>
-                    <td><?= $item['invoice_id'] ?></td>
-                    <td class="urdu-cell"><?= htmlspecialchars($waxName) ?></td>
-                    <td class="urdu-cell"><?= htmlspecialchars($desName) ?></td>
-                    <td><?= $wQty ?></td>
-                    <td><?= $wRate ?></td>
-                    <td><?= $wAmtStr ?></td>
-                    <td><?= $dQty ?></td>
-                    <td><?= $dRate ?></td>
-                    <td><?= $dAmtStr ?></td>
-                    <td style="font-weight: bold; color: #1B5E20;"><?= format_amount($item['amount']) ?></td>
+                    <td style="font-size:12px;white-space:nowrap;"><?= date('d-M', strtotime($item['invoice_date'])) ?></td>
+                    <td style="font-size:12px;"><?= $item['invoice_id'] ?></td>
+                    <td class="urdu-cell" style="font-size:13px;"><?= htmlspecialchars($waxName) ?></td>
+                    <td style="font-size:12px;"><?= $wQty ?></td>
+                    <td style="font-size:12px;"><?= $wRate ?></td>
+                    <td class="urdu-cell" style="font-size:13px;"><?= htmlspecialchars($desName) ?></td>
+                    <td style="font-size:12px;"><?= $dQty ?></td>
+                    <td style="font-size:12px;"><?= $dRate ?></td>
+                    <td class="amt-cell"><?= format_amount($item['amount']) ?></td>
                 </tr>
                 <?php endforeach; ?>
-                
-                <?php 
-                $used_rows = count($page_items);
-                $remaining = $max_rows - $used_rows;
-                for($i=0; $i<$remaining; $i++): ?>
-                <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
-                <?php endfor; ?>
+                <?php if ($is_last_page):
+                    $used_rows = count($page_items);
+                    $remaining = $max_rows - $used_rows;
+                    $fill_rows = min($remaining, 3);
+                    for ($i = 0; $i < $fill_rows; $i++): ?>
+                <tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+                <?php endfor; endif; ?>
             </tbody>
         </table>
-
-<?php if ($is_last_page): ?>
-        <table class="summary-table">
-            <tr class="summary-row">
-                <td>Bill Total (اس بل کی رقم)</td>
-                <td><?= format_amount($cust['bill_total']) ?></td>
-            </tr>
-            <tr class="summary-row">
-                <td>Opening Balance (سابقہ بیلنس) (+)</td>
-                <td><?= format_amount($cust['opening_balance']) ?></td>
-            </tr>
-            <tr class="summary-row payment-row">
-                <td>Payment Received (وصولی) (-)</td>
-                <td style="color: #388E3C;">- <?= format_amount($cust['current_payments']) ?></td>
-            </tr>
-            <tr class="closing-row" style="text-align:right">
-                <td>موجودہ بیلنس | CLOSING BALANCE</td>
-                <td><?= format_amount($cust['closing_balance']) ?> <?= $cust['closing_balance'] >= 0 ? '(DR)' : '(CR)' ?></td>
-            </tr>
+        <?php if ($is_last_page): ?>
+        <table class="bill-summary-table">
+            <tr class="summary-row"><td>Bill Total (اس بل کی رقم)</td><td><?= format_amount($cust['bill_total']) ?></td></tr>
+            <tr class="summary-row"><td>Opening Balance (سابقہ بیلنس) (+)</td><td><?= format_amount($cust['opening_balance']) ?></td></tr>
+            <tr class="summary-row payment-row"><td>Payment Received (وصولی) (−)</td><td style="color:#28a745;">− <?= format_amount($cust['current_payments']) ?></td></tr>
+            <tr class="bill-closing-row" style="text-align:right"><td>موجودہ بیلنس | CLOSING BALANCE</td><td><?= format_amount($cust['closing_balance']) ?></td></tr>
         </table>
-
-        <div class="words-section">
-            <?= number_to_urdu_words($cust['closing_balance']) ?>روپے
-        </div>
-
+        <div class="words-section"><?= number_to_urdu_words($cust['closing_balance']) ?></div>
         <div class="bottom-section">
             <div class="signature">
-                <img src="https://punjabrp.altafhussain-co.com/assets/sign.png" alt="Signature">
+                <img src="https://mjcasting.altafhussain-co.com/wax/assets/sign.png" alt="Signature" crossorigin="anonymous">
                 <div class="signature-line">Authorized Signature</div>
             </div>
         </div>
         <?php else: ?>
-        <div style="text-align: right; padding: 8px; font-style: italic; color: #1B5E20; font-size: 12px;">
-            Continued on next page...
-        </div>
+        <div class="continued-notice">▶ Continued on next page... | اگلے صفحے پر جاری ہے</div>
         <?php endif; ?>
-
     </div>
 </div>
-
-<?php 
+<?php
         endforeach;
     endif;
-endforeach; 
+endforeach;
 ?>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dom-to-image-more@3.3.0/dist/dom-to-image-more.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
 <script>
-document.fonts.ready.then(function() {
-    console.log('Fonts loaded');
+// Pass PHP dates to JavaScript
+var startDateFormatted = '<?= date("d-M-Y", strtotime($start_date)) ?>';
+var endDateFormatted   = '<?= date("d-M-Y", strtotime($end_date)) ?>';
+
+function dataURLtoBlob(dataURL) {
+    var arr = dataURL.split(','),
+        mime = arr[0].match(/:(.*?);/)[1],
+        bstr = atob(arr[1]),
+        n = bstr.length,
+        u8arr = new Uint8Array(n);
+    while (n--) { u8arr[n] = bstr.charCodeAt(n); }
+    return new Blob([u8arr], { type: mime });
+}
+
+document.fonts.ready.then(function () {
+    console.log('All fonts loaded and ready for export.');
 });
 
+// Capture one .page element and return a JPEG data-URL
+async function capturePage(page) {
+    var scale  = 2.5;
+    var width  = page.scrollWidth;
+    var height = page.scrollHeight;
+
+    return domtoimage.toJpeg(page, {
+        quality : 0.95,
+        bgcolor : '#ffffff',
+        width   : width  * scale,
+        height  : height * scale,
+        style   : {
+            transform       : 'scale(' + scale + ')',
+            transformOrigin : 'top left',
+            width           : width  + 'px',
+            height          : height + 'px',
+            margin          : '0',
+            boxShadow       : 'none',
+            border          : 'none',
+            overflow        : 'hidden'
+        },
+        filter: function (node) {
+            if (node.classList && node.classList.contains('page-export-btn'))  return false;
+            if (node.classList && node.classList.contains('no-print'))        return false;
+            return true;
+        }
+    });
+}
+
+// Make a filesystem-safe name (keep English + Urdu chars, remove junk)
+function safeName(str) {
+    return str
+        .replace(/[\\/:*?"<>|]/g, '')          // remove Windows-illegal chars
+        .replace(/\s+/g, ' ')                   // collapse spaces
+        .trim()
+        .substring(0, 80);
+}
+
+// ==================== SINGLE PAGE EXPORT ====================
+async function exportSinglePage(pageId, customerName) {
+    var page   = document.getElementById(pageId);
+    var button = page.querySelector('.page-export-btn');
+    if (!page) { alert('Page not found!'); return; }
+
+    var originalText = button.innerHTML;
+    button.innerHTML = '<span class="icon">⏳</span> Exporting...';
+    button.classList.add('exporting');
+
+    try {
+        await document.fonts.ready;
+        await new Promise(function(r){ setTimeout(r, 500); });
+
+        var dataUrl  = await capturePage(page);
+        var blob     = dataURLtoBlob(dataUrl);
+        var filename = safeName(customerName) + '.jpg';
+
+        saveAs(blob, filename);
+
+        button.innerHTML = '<span class="icon">✅</span> Done!';
+        setTimeout(function () {
+            button.innerHTML = originalText;
+            button.classList.remove('exporting');
+        }, 1500);
+
+    } catch (error) {
+        console.error('Error exporting page:', error);
+        button.innerHTML = '<span class="icon">❌</span> Error!';
+        setTimeout(function () {
+            button.innerHTML = originalText;
+            button.classList.remove('exporting');
+        }, 2000);
+    }
+}
+
+// ==================== EXPORT ALL → ZIP ====================
 async function exportAllToZip() {
-    const pages = document.querySelectorAll('.page');
-    const progress = document.getElementById('exportProgress');
-    const progressText = document.getElementById('progressText');
-    const zip = new JSZip();
-    
+    var pages        = document.querySelectorAll('.page');
+    var progress     = document.getElementById('exportProgress');
+    var progressText = document.getElementById('progressText');
+    var zip          = new JSZip();
+
     progress.classList.add('show');
     progressText.textContent = 'Loading fonts...';
-    
+
     await document.fonts.ready;
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    progressText.textContent = 'Preparing export...';
-    
-    for (let i = 0; i < pages.length; i++) {
-        progressText.textContent = `Exporting ${i + 1} of ${pages.length}...`;
-        
-        const page = pages[i];
-        const customerName = page.dataset.customer || 'Customer';
-        const safeCustomerName = customerName.replace(/[^a-zA-Z0-9\s_]/g, '').replace(/\s+/g, '_').substring(0, 50);
-        
-        let filename;
-        if (i === 0) {
-            filename = `00_Summary_Report.jpg`;
-        } else {
-            filename = `${String(i).padStart(2, '0')}_Bill_${safeCustomerName}.jpg`;
+    await new Promise(function(r){ setTimeout(r, 800); });
+
+    // ---- folder & zip names ----
+    var folderName = 'M.J RP Ledger ' + endDateFormatted;
+    var zipName    = folderName + '.zip';
+    var folder     = zip.folder(folderName);
+
+    // ---- track used filenames to avoid duplicates ----
+    var usedNames = {};
+
+    function uniqueName(base) {
+        var clean = safeName(base);
+        if (!usedNames[clean]) {
+            usedNames[clean] = 1;
+            return clean;
         }
-        
-        try {
-            const clone = page.cloneNode(true);
-            clone.style.position = 'absolute';
-            clone.style.left = '-9999px';
-            clone.style.top = '0';
-            clone.style.margin = '0';
-            clone.style.boxShadow = 'none';
-            document.body.appendChild(clone);
-            
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            const canvas = await html2canvas(clone, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#ffffff',
-                width: clone.scrollWidth,
-                height: clone.scrollHeight,
-                logging: false,
-                onclone: function(clonedDoc) {
-                    const style = clonedDoc.createElement('style');
-                    style.textContent = `
-                        @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
-                        .urdu-cell, .urdu-header, .balance-label-urdu, .words-section, .balance-only-message {
-                            font-family: 'Noto Nastaliq Urdu', Arial, sans-serif !important;
-                        }
-                    `;
-                    clonedDoc.head.appendChild(style);
-                }
-            });
-            
-            document.body.removeChild(clone);
-            
-            const blob = await new Promise(resolve => {
-                canvas.toBlob(resolve, 'image/jpeg', 1.0);
-            });
-            
-            zip.file(filename, blob);
-            
-        } catch (error) {
-            console.error(`Error exporting page ${i + 1}:`, error);
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 200));
+        usedNames[clean]++;
+        return clean + ' (' + usedNames[clean] + ')';
     }
-    
+
+    progressText.textContent = 'Preparing export...';
+
+    for (var i = 0; i < pages.length; i++) {
+        progressText.textContent = 'Exporting ' + (i + 1) + ' of ' + pages.length + '...';
+
+        var page         = pages[i];
+        var customerName = (page.dataset.customer || 'Customer').trim();
+        var pageNum      = page.dataset.pageNum    || '';
+        var totalPages   = page.dataset.totalPages || '1';
+
+        // ---- build filename: just the customer name ----
+        var baseName;
+        if (i === 0) {
+            baseName = '0Summary Report';
+        } else {
+            baseName = customerName;
+            // only add Page suffix when customer has multiple pages
+            if (parseInt(totalPages) > 1 && pageNum) {
+                baseName += ' Page ' + pageNum;
+            }
+        }
+
+        var filename = uniqueName(baseName) + '.jpg';
+
+        try {
+            var dataUrl    = await capturePage(page);
+            var base64Data = dataUrl.split(',')[1];
+            folder.file(filename, base64Data, { base64: true });
+        } catch (error) {
+            console.error('Error exporting page ' + (i + 1) + ':', error);
+        }
+
+        await new Promise(function(r){ setTimeout(r, 300); });
+    }
+
     progressText.textContent = 'Creating ZIP file...';
-    
+
     try {
-        const zipBlob = await zip.generateAsync({ 
+        var zipBlob = await zip.generateAsync({
             type: 'blob',
             compression: 'DEFLATE',
             compressionOptions: { level: 6 }
         });
-        
-        const today = new Date();
-        const dateStr = today.toISOString().split('T')[0];
-        const zipFilename = `Bills_Client2_${dateStr}.zip`;
-        
-        saveAs(zipBlob, zipFilename);
-        
-        progressText.textContent = 'Download started!';
-        setTimeout(() => {
-            progress.classList.remove('show');
-        }, 2000);
-        
+
+        saveAs(zipBlob, zipName);
+
+        progressText.textContent = '✅ Download started!';
+        setTimeout(function () { progress.classList.remove('show'); }, 2000);
+
     } catch (error) {
         console.error('Error creating ZIP:', error);
-        progressText.textContent = 'Error creating ZIP file';
-        setTimeout(() => {
-            progress.classList.remove('show');
-        }, 3000);
+        progressText.textContent = '❌ Error creating ZIP file';
+        setTimeout(function () { progress.classList.remove('show'); }, 3000);
     }
 }
 </script>

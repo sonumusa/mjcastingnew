@@ -2,6 +2,7 @@
 // API endpoint: Get customer balance
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions/ledger_functions.php';
+require_once __DIR__ . '/../functions/gold_calculations.php';
 
 header('Content-Type: application/json');
 
@@ -12,6 +13,7 @@ if (!isLoggedIn()) {
 }
 
 $id = (int) query('id', 0);
+$excludeInvoiceId = (int) query('exclude', 0);
 if (!$id) {
     http_response_code(400);
     echo json_encode(['error' => 'Customer ID required']);
@@ -29,7 +31,11 @@ if (!$customer) {
     exit;
 }
 
-$balance = getCustomerCurrentBalance($id);
+if ($excludeInvoiceId > 0) {
+    $balance = getPreviousBalance($id, $excludeInvoiceId);
+} else {
+    $balance = getCustomerCurrentBalance($id);
+}
 
 echo json_encode([
     'balance' => $balance,

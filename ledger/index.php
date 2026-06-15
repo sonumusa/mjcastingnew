@@ -74,7 +74,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div><span class="text-muted">Opening:</span> <span class="mono"><?= number_format($ledgerData['opening_balance'], 3) ?> g</span></div>
             <div><span class="text-muted">Given:</span> <span class="mono text-success"><?= number_format($ledgerData['total_effective_gold'], 3) ?> g</span></div>
             <div><span class="text-muted">Received:</span> <span class="mono text-danger"><?= number_format($ledgerData['total_received_khalis'], 3) ?> g</span></div>
-            <div><span class="text-muted">Wasooli:</span> <span class="mono"><?= number_format($ledgerData['total_wasooli'], 3) ?> g</span></div>
+
             <div><span class="text-muted" style="font-weight:600;">Balance:</span> 
                 <span class="mono" style="font-weight:700;font-size:1.1rem;color:<?= $ledgerData['current_balance'] < 0 ? 'var(--error)' : 'var(--success)' ?>;">
                     <?= number_format($ledgerData['current_balance'], 3) ?> g
@@ -100,14 +100,13 @@ require_once __DIR__ . '/../includes/header.php';
                 <th>Voucher #</th>
                 <th class="text-right">Given (g)</th>
                 <th class="text-right">Received (g)</th>
-                <th class="text-right">Wasooli (g)</th>
                 <th class="text-right">Net (g)</th>
                 <th class="text-right">Balance (g)</th>
             </tr>
         </thead>
         <tbody>
             <tr style="font-weight:600;background:var(--bg-surface);">
-                <td colspan="7">Opening Balance</td>
+                <td colspan="6">Opening Balance</td>
                 <td class="text-right mono"><?= number_format($ledgerData['opening_balance'], 3) ?></td>
             </tr>
             <?php foreach ($ledgerData['transactions'] as $txn): ?>
@@ -123,7 +122,6 @@ require_once __DIR__ . '/../includes/header.php';
                 </td>
                 <td class="text-right mono"><?= $txn['type'] === 'invoice' ? number_format($txn['effective_gold'], 3) : '-' ?></td>
                 <td class="text-right mono"><?= $txn['type'] === 'invoice' ? number_format($txn['received_khalis'], 3) : number_format($txn['khalis_weight'], 3) ?></td>
-                <td class="text-right mono"><?= $txn['type'] === 'invoice' ? number_format($txn['wasooli'], 3) : '-' ?></td>
                 <td class="text-right mono <?= $txn['net_amount'] < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($txn['net_amount'], 3) ?></td>
                 <td class="text-right mono"><?= number_format($txn['running_balance_after'], 3) ?></td>
             </tr>

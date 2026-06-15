@@ -15,8 +15,8 @@ $extraCss = '<style>
     .section-header::after { content: ""; position: absolute; bottom: -1px; left: 0; width: 80px; height: 2px; background: var(--gold-primary); border-radius: 2px; }
     .section-header i { color: var(--gold-primary); font-size: 1.35rem; }
     .section-header h3 { font-family: "Playfair Display", serif; font-size: 1.15rem; color: var(--text-primary); margin: 0; }
-    .input-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
-    .full-width { grid-column: span 2; }
+    .input-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    .full-width { grid-column: span 3; }
     .form-group label { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
     .calc-input-wrapper { position: relative; }
     .calc-input-wrapper input { padding-right: 44px; }
@@ -43,6 +43,91 @@ $extraCss = '<style>
     .total-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; opacity: 0.9; margin-bottom: 6px; font-weight: 700; }
     .total-value { font-family: "JetBrains Mono", monospace; font-size: 1.6rem; font-weight: 700; }
     .hidden-field { display: none !important; }
+
+    /* Adjustment Panel Styles */
+    .adjustment-panel {
+        margin-bottom: 16px;
+        padding: 12px 14px;
+        background: rgba(67, 97, 238, 0.05);
+        border: 1px solid rgba(67, 97, 238, 0.2);
+        border-radius: 10px;
+        transition: all 0.2s ease;
+    }
+    .adjustment-panel.active {
+        background: rgba(67, 97, 238, 0.1);
+        border-color: #4361ee;
+    }
+    .adjustment-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+    .adjustment-toggle input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: #4361ee;
+    }
+    .adjustment-fields {
+        display: none;
+        margin-top: 12px;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .adjustment-panel.active .adjustment-fields {
+        display: grid;
+    }
+    .adj-control {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .adj-control label {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .adj-input-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .adj-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        transition: all 0.15s ease;
+    }
+    .adj-btn:hover {
+        background: #4361ee;
+        color: #fff;
+        border-color: #4361ee;
+    }
+    .adj-input {
+        width: 70px;
+        text-align: center;
+        font-size: 0.8rem;
+        padding: 4px 6px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        font-family: "JetBrains Mono", monospace;
+    }
+
     @media (max-width: 1024px) { .invoice-grid { grid-template-columns: 1fr; } .live-panel { position: static; } }
 </style>';
 
@@ -65,6 +150,10 @@ $existingReceives = $stmt->fetchAll();
 
 $customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status = 'active' ORDER BY name")->fetchAll();
 
+// Clamp saved ratti to valid range for dropdown
+$savedRatti = (int) round($invoice['ratti']);
+$savedRatti = max(6, min(24, $savedRatti));
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     requireCsrf();
@@ -82,10 +171,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rattiRate = parseDecimal(post('ratti_rate', 0));
     $rpRate = parseDecimal(post('rp_rate', 0));
     $rpMazdoriWeight = parseDecimal(post('rp_mazdori_weight', 0));
-    $rpMazdoriAmount = parseDecimal(post('rp_mazdori_amount', 0)); // Changed from rate
+    $rpMazdoriAmount = parseDecimal(post('rp_mazdori_amount', 0));
     $castingMazdoriWeight = parseDecimal(post('casting_mazdori_weight', 0));
-    $castingMazdoriAmount = parseDecimal(post('casting_mazdori_amount', 0)); // Changed from rate
-    $wasooli = parseDecimal(post('wasooli', 0)); // Hidden but still stored
+    $castingMazdoriAmount = parseDecimal(post('casting_mazdori_amount', 0));
+    $wasooli = parseDecimal(post('wasooli', 0));
+
+    // Fraction adjustment overrides
+    $wasteWeightOverride = post('waste_weight_override', null);
+    $maleWasteOverride = post('male_waste_override', null);
 
     // Validate
     if (!$customerId) {
@@ -118,16 +211,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Get previous balance (excluding current invoice)
     $previousBalance = getPreviousBalance($customerId, $id);
 
-    // Run calculation - pass amount instead of rate, set rate to 0
+    // Run calculation
     $calc = calculateGold([
         'casting_weight' => $castingWeight,
         'ratti' => $ratti,
         'ratti_rate' => $rattiRate,
         'rp_rate' => $rpRate,
         'rp_mazdori_weight' => $rpMazdoriWeight,
-        'rp_mazdori_rate' => 0, // Rate no longer used
+        'rp_mazdori_rate' => 0,
         'casting_mazdori_weight' => $castingMazdoriWeight,
-        'casting_mazdori_rate' => 0, // Rate no longer used
+        'casting_mazdori_rate' => 0,
         'wasooli' => $wasooli,
         'previous_balance' => $previousBalance,
         'total_received_khalis' => $totalReceivedKhalis,
@@ -136,6 +229,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Override amounts with manually entered values
     $calc['rp_mazdori_amount'] = $rpMazdoriAmount;
     $calc['casting_mazdori_amount'] = $castingMazdoriAmount;
+
+    // Apply fraction adjustment overrides
+    if ($wasteWeightOverride !== null && $wasteWeightOverride !== '') {
+        $calc['waste_weight'] = parseDecimal($wasteWeightOverride);
+        $calc['total_weight'] = round($calc['casting_weight'] + $calc['waste_weight'], 3);
+
+        if ($maleWasteOverride !== null && $maleWasteOverride !== '') {
+            $calc['male_waste'] = parseDecimal($maleWasteOverride);
+        } else {
+            $calc['male_waste'] = round(($calc['total_weight'] / 96) * $calc['ratti'], 3);
+        }
+    } elseif ($maleWasteOverride !== null && $maleWasteOverride !== '') {
+        $calc['male_waste'] = parseDecimal($maleWasteOverride);
+    }
+
+    // Recalculate downstream values after overrides
+    $calc['gold_khalis'] = round($calc['total_weight'] - $calc['male_waste'], 3);
+    $calc['effective_gold'] = round($calc['gold_khalis'] + $calc['rp_mazdori_weight'] + $calc['casting_mazdori_weight'], 3);
+    $calc['grand_total'] = $calc['effective_gold'];
+    $calc['remaining_balance'] = round($previousBalance + $calc['effective_gold'] - $totalReceivedKhalis, 3);
 
     try {
         $db->beginTransaction();
@@ -153,8 +266,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $customerId, $invoiceType, $invoiceDate, $manualBookNo,
             $calc['casting_weight'], $calc['waste_weight'], $calc['total_weight'],
             $calc['ratti'], $calc['ratti_rate'], $calc['male_waste'], $calc['gold_khalis'], $totalReceivedKhalis,
-            $calc['rp_rate'], $calc['rp_amount'], $calc['rp_mazdori_weight'], 0, $calc['rp_mazdori_amount'], // rate stored as 0
-            $calc['casting_mazdori_weight'], 0, $calc['casting_mazdori_amount'], // rate stored as 0
+            $calc['rp_rate'], $calc['rp_amount'], $calc['rp_mazdori_weight'], 0, $calc['rp_mazdori_amount'],
+            $calc['casting_mazdori_weight'], 0, $calc['casting_mazdori_amount'],
             $calc['effective_gold'], $calc['grand_total'], $calc['wasooli'], $previousBalance, $calc['remaining_balance'],
             $remarks, $status, $_SESSION['user_id'],
             $id
@@ -198,6 +311,9 @@ require_once __DIR__ . '/../includes/header.php';
     <input type="hidden" name="previous_balance" id="previous_balance" value="<?= $invoice['previous_balance'] ?>">
     <input type="hidden" name="total_received_khalis" id="total_received_khalis" value="<?= $invoice['total_received_khalis'] ?>">
     <input type="hidden" name="wasooli" id="wasooli" value="<?= $invoice['wasooli'] ?>">
+    <input type="hidden" name="rp_rate" id="rp_rate" value="<?= $invoice['rp_rate'] ?? 0 ?>">
+    <input type="hidden" name="waste_weight_override" id="waste_weight_override" value="">
+    <input type="hidden" name="male_waste_override" id="male_waste_override" value="">
 
     <div class="invoice-grid">
 
@@ -277,10 +393,12 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="form-group">
                         <label>Ratti <span class="font-urdu">رتی</span></label>
-                        <div class="calc-input-wrapper">
-                            <input type="number" name="ratti" id="ratti" class="form-control" step="0.001" value="<?= $invoice['ratti'] ?>" required oninput="calculateLive()">
-                        </div>
-                        <div class="formula-hint">Ratti impurity level</div>
+                        <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
+                            <?php for ($i = 6; $i <= 24; $i++): ?>
+                                <option value="<?= $i ?>" <?= $i == $savedRatti ? 'selected' : '' ?>><?= $i ?></option>
+                            <?php endfor; ?>
+                        </select>
+                        <div class="formula-hint">Ratti impurity level (6 to 24)</div>
                     </div>
                     <div class="form-group">
                         <label>Ratti Rate <span class="font-urdu">رتی ریٹ</span></label>
@@ -288,16 +406,8 @@ require_once __DIR__ . '/../includes/header.php';
                             <input type="number" name="ratti_rate" id="ratti_rate" class="form-control" step="0.001" value="<?= $invoice['ratti_rate'] ?>" required oninput="calculateLive()">
                             <span class="unit-label">g</span>
                         </div>
-                        <div class="formula-hint">Deduction per 10g casting</div>
+                        <div class="formula-hint">Auto-set by Ratti, but editable</div>
                     </div>
-                   <!-- <div class="form-group">
-                        <label>RP Rate <span class="font-urdu">آر پی ریٹ</span></label>
-                        <div class="calc-input-wrapper">
-                            <input type="number" name="rp_rate" id="rp_rate" class="form-control" step="0.01" value="<?= $invoice['rp_rate'] ?>" required oninput="calculateLive()">
-                            <span class="unit-label">Rs</span>
-                        </div>
-                        <div class="formula-hint">Redemption price per gram</div>
-                    </div>-->
                     <div class="form-group">
                         <label>RP Mazdori Weight <span class="font-urdu">آر پی مزدوری وزن</span></label>
                         <div class="calc-input-wrapper">
@@ -305,7 +415,6 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">g</span>
                         </div>
                     </div>
-                    <!-- RP Mazdori Rate - HIDDEN -->
                     <div class="form-group hidden-field">
                         <label>RP Mazdori Rate <span class="font-urdu">آر پی مزدوری ریٹ</span></label>
                         <div class="calc-input-wrapper">
@@ -313,7 +422,6 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
-                    <!-- RP Mazdori Amount - VISIBLE (manual entry) -->
                     <div class="form-group">
                         <label>RP Mazdori Amount <span class="font-urdu">آر پی مزدوری رقم</span></label>
                         <div class="calc-input-wrapper">
@@ -328,7 +436,6 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">g</span>
                         </div>
                     </div>
-                    <!-- Casting Mazdori Rate - HIDDEN -->
                     <div class="form-group hidden-field">
                         <label>Casting Mazdori Rate <span class="font-urdu">کاسٹنگ مزدوری ریٹ</span></label>
                         <div class="calc-input-wrapper">
@@ -336,7 +443,6 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
-                    <!-- Casting Mazdori Amount - VISIBLE (manual entry) -->
                     <div class="form-group">
                         <label>Casting Mazdori Amount <span class="font-urdu">کاسٹنگ مزدوری رقم</span></label>
                         <div class="calc-input-wrapper">
@@ -344,7 +450,6 @@ require_once __DIR__ . '/../includes/header.php';
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
-                    <!-- Wasooli - HIDDEN -->
                     <div class="form-group hidden-field">
                         <label>Wasooli <span class="font-urdu">وصولی</span></label>
                         <div class="calc-input-wrapper">
@@ -396,6 +501,34 @@ require_once __DIR__ . '/../includes/header.php';
                 <span><i class="bi bi-lightning-charge"></i> Live Calculation</span>
                 <span class="font-urdu" style="font-size:0.85rem;color:var(--text-muted);">فوری حساب</span>
             </h4>
+
+            <!-- Fraction Adjustment Panel -->
+            <div class="adjustment-panel" id="adjustment-panel">
+                <label class="adjustment-toggle">
+                    <input type="checkbox" id="enable-adjustment" onchange="toggleAdjustment()">
+                    <span>Enable Fraction Adjustment</span>
+                    <span class="font-urdu" style="font-size:0.7rem;opacity:0.7;">کسر ایڈجسٹمنٹ</span>
+                </label>
+                <div class="adjustment-fields">
+                    <div class="adj-control">
+                        <label>Waste Weight Adj.</label>
+                        <div class="adj-input-group">
+                            <button type="button" class="adj-btn" onclick="adjustValue('waste-adjustment', -0.01)">−</button>
+                            <input type="number" id="waste-adjustment" class="adj-input" step="0.001" value="0.000" oninput="calculateLive()">
+                            <button type="button" class="adj-btn" onclick="adjustValue('waste-adjustment', 0.01)">+</button>
+                        </div>
+                    </div>
+                    <div class="adj-control">
+                        <label>Male Waste Adj.</label>
+                        <div class="adj-input-group">
+                            <button type="button" class="adj-btn" onclick="adjustValue('male-waste-adjustment', -0.01)">−</button>
+                            <input type="number" id="male-waste-adjustment" class="adj-input" step="0.001" value="0.000" oninput="calculateLive()">
+                            <button type="button" class="adj-btn" onclick="adjustValue('male-waste-adjustment', 0.01)">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="live-row">
                 <span class="live-label"><i class="bi bi-arrow-right" style="color:var(--text-muted);"></i> Casting Weight</span>
                 <span class="live-value" id="live-casting">0.000 g</span>
@@ -442,7 +575,6 @@ require_once __DIR__ . '/../includes/header.php';
                     <span class="live-value" id="live-previous-balance" style="color:#4361ee;font-weight:700;font-size:1.3rem;">0.000 g</span>
                 </div>
             </div>
-            <!-- Wasooli section - HIDDEN from live panel -->
             <div>
                 <div style="margin-top:8px;padding:10px 18px;background:rgba(220,53,69,0.08);border:1px solid rgba(220,53,69,0.3);border-radius:12px;">
                     <div style="display:none;">
@@ -475,6 +607,57 @@ require_once __DIR__ . '/../includes/header.php';
 <script>
 let receiveRowCount = <?= count($existingReceives) ?>;
 let existingReceiveData = <?= json_encode($existingReceives) ?>;
+
+// Custom rounding: threshold at 0.8 instead of 0.5
+function customRound2(val) {
+    let scaled = Math.round(val * 1000);
+    let hundreds = Math.floor(scaled / 10);
+    let remainder = scaled % 10;
+    if (remainder >= 8) {
+        return (hundreds + 1) / 100;
+    } else {
+        return hundreds / 100;
+    }
+}
+
+// Auto-set Ratti Rate based on Ratti value
+function updateRattiRate() {
+    const ratti = parseInt(document.getElementById('ratti').value);
+    let rate = 0.100;
+    if (ratti >= 6 && ratti <= 15) {
+        rate = 0.100;
+    } else if (ratti === 16) {
+        rate = 0.110;
+    } else if (ratti === 17) {
+        rate = 0.120;
+    } else if (ratti >= 18 && ratti <= 24) {
+        rate = 0.150;
+    }
+    document.getElementById('ratti_rate').value = rate.toFixed(3);
+}
+
+// Toggle adjustment fields visibility
+function toggleAdjustment() {
+    const checkbox = document.getElementById('enable-adjustment');
+    const panel = document.getElementById('adjustment-panel');
+    if (checkbox.checked) {
+        panel.classList.add('active');
+    } else {
+        panel.classList.remove('active');
+        document.getElementById('waste-adjustment').value = '0.000';
+        document.getElementById('male-waste-adjustment').value = '0.000';
+    }
+    calculateLive();
+}
+
+// Adjust value by delta (for +/- buttons)
+function adjustValue(id, delta) {
+    const input = document.getElementById(id);
+    let val = parseFloat(input.value) || 0;
+    val = Math.round((val + delta) * 1000) / 1000;
+    input.value = val.toFixed(3);
+    calculateLive();
+}
 
 function addReceiveRow(data = null) {
     const container = document.getElementById('receives-container');
@@ -525,16 +708,24 @@ function updateWasooli() {
 }
 
 function calculateLive() {
-    // Get input values
-    const castingWeight = parseFloat(document.getElementById('casting_weight').value) || 0;
-    const ratti = parseFloat(document.getElementById('ratti').value) || 0;
-    const rattiRate = parseFloat(document.getElementById('ratti_rate').value) || 0;
-    const rpRate = parseFloat(document.getElementById('rp_rate').value) || 0;
-    const rpMazdoriWeight = parseFloat(document.getElementById('rp_mazdori_weight').value) || 0;
-    const rpMazdoriAmount = parseFloat(document.getElementById('rp_mazdori_amount').value) || 0; // Manual entry
-    const castingMazdoriWeight = parseFloat(document.getElementById('casting_mazdori_weight').value) || 0;
-    const castingMazdoriAmount = parseFloat(document.getElementById('casting_mazdori_amount').value) || 0; // Manual entry
-    const wasooli = parseFloat(document.getElementById('wasooli').value) || 0;
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? parseFloat(el.value) || 0 : 0;
+    };
+    const castingWeight = getVal('casting_weight');
+    const ratti = getVal('ratti');
+    const rattiRate = getVal('ratti_rate');
+    const rpRate = getVal('rp_rate');
+    const rpMazdoriWeight = getVal('rp_mazdori_weight');
+    const rpMazdoriAmount = getVal('rp_mazdori_amount');
+    const castingMazdoriWeight = getVal('casting_mazdori_weight');
+    const castingMazdoriAmount = getVal('casting_mazdori_amount');
+    const wasooli = getVal('wasooli');
+    
+    // Get adjustments
+    const adjustmentEnabled = document.getElementById('enable-adjustment').checked;
+    const wasteAdjustment = adjustmentEnabled ? (parseFloat(document.getElementById('waste-adjustment').value) || 0) : 0;
+    const maleWasteAdjustment = adjustmentEnabled ? (parseFloat(document.getElementById('male-waste-adjustment').value) || 0) : 0;
     
     // Calculate receive rows
     let totalReceivedKhalis = 0;
@@ -549,39 +740,47 @@ function calculateLive() {
             let khalis = 0;
             if (gross > 0) {
                 khalis = gross - (gross / 96 * rattiImp);
-                khalis = Math.round(khalis * 1000) / 1000;
+               // khalis = Math.round(khalis * 1000) / 1000;
+               khalis = customRound2(khalis); 
             }
+            //display.value = khalis.toFixed(3);
             display.value = khalis.toFixed(3);
             totalReceivedKhalis += khalis;
         }
     });
-    totalReceivedKhalis = Math.round(totalReceivedKhalis * 1000) / 1000;
+   // totalReceivedKhalis = Math.round(totalReceivedKhalis * 1000) / 1000;
+   totalReceivedKhalis = customRound2(totalReceivedKhalis);
     
     document.getElementById('total_received_khalis').value = totalReceivedKhalis;
     
-    // Previous balance (from hidden or customer)
     const previousBalance = parseFloat(document.getElementById('previous_balance').value) || 0;
     
-    // Calculations
-    // 1. Waste Weight
+    // 1. Waste Weight - apply custom rounding then add adjustment
     let wasteWeight = 0;
     if (castingWeight > 0 && rattiRate > 0) {
-        wasteWeight = Math.round((castingWeight / 10) * rattiRate * 1000) / 1000;
+        wasteWeight = (castingWeight / 10) * rattiRate;
     }
+    let roundedWaste = customRound2(wasteWeight);
+    let finalWaste = roundedWaste + wasteAdjustment;
+    if (finalWaste < 0) finalWaste = 0;
     
     // 2. Total Weight
-    const totalWeight = Math.round((castingWeight + wasteWeight) * 1000) / 1000;
+    const totalWeight = Math.round((castingWeight + finalWaste) * 1000) / 1000;
     
-    // 3. Male Waste
+    // 3. Male Waste - apply custom rounding then add adjustment
     let maleWaste = 0;
     if (totalWeight > 0 && ratti > 0) {
-        maleWaste = Math.round((totalWeight / 96) * ratti * 1000) / 1000;
+        maleWaste = (totalWeight / 96) * ratti;
     }
+    let roundedMaleWaste = customRound2(maleWaste);
+    let finalMaleWaste = roundedMaleWaste + maleWasteAdjustment;
+    if (finalMaleWaste < 0) finalMaleWaste = 0;
     
     // 4. Gold Khalis
-    const goldKhalis = Math.round((totalWeight - maleWaste) * 1000) / 1000;
+    let goldKhalis = Math.round((totalWeight - finalMaleWaste) * 1000) / 1000;
+    if (goldKhalis < 0) goldKhalis = 0;
     
-    // 5. RP Amount (display only, calculated from gold khalis * rp_rate)
+    // 5. RP Amount
     const rpAmount = Math.round(goldKhalis * rpRate * 100) / 100;
     
     // 6. Effective Gold
@@ -590,14 +789,18 @@ function calculateLive() {
     // 7. Grand Total
     const grandTotal = effectiveGold;
     
-    // 8. Remaining Balance (without wasooli since it's hidden)
+    // 8. Remaining Balance
     const remainingBalance = Math.round((previousBalance + effectiveGold - totalReceivedKhalis) * 1000) / 1000;
+    
+    // Store override values in hidden fields
+    document.getElementById('waste_weight_override').value = finalWaste.toFixed(3);
+    document.getElementById('male_waste_override').value = finalMaleWaste.toFixed(3);
     
     // Update live panel
     document.getElementById('live-casting').textContent = castingWeight.toFixed(3) + ' g';
-    document.getElementById('live-waste').textContent = wasteWeight.toFixed(3) + ' g';
+    document.getElementById('live-waste').textContent = finalWaste.toFixed(3) + ' g';
     document.getElementById('live-total').textContent = totalWeight.toFixed(3) + ' g';
-    document.getElementById('live-male-waste').textContent = maleWaste.toFixed(3) + ' g';
+    document.getElementById('live-male-waste').textContent = finalMaleWaste.toFixed(3) + ' g';
     document.getElementById('live-gold-khalis').textContent = goldKhalis.toFixed(3) + ' g';
     document.getElementById('live-rp-mazdori-wt').textContent = rpMazdoriWeight.toFixed(3) + ' g';
     document.getElementById('live-casting-mazdori-wt').textContent = castingMazdoriWeight.toFixed(3) + ' g';
@@ -630,18 +833,29 @@ function updateCustomerBalance(customerId) {
         return;
     }
     
-    fetch('<?= url('api/customer_balance.php?id=') ?>' + customerId)
-        .then(r => r.json())
+    const excludeId = <?= (int)$id ?>;
+    fetch('<?= url('api/customer_balance.php?id=') ?>' + customerId + '&exclude=' + excludeId, {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(r => {
+            if (!r.ok) throw new Error('Network error');
+            return r.json();
+        })
         .then(data => {
+            if (data.error) throw new Error(data.error);
             document.getElementById('selected-customer-name').textContent = '👤 ' + data.customer_name;
-            document.getElementById('last-balance-display').textContent = data.balance.toFixed(3) + ' g';
-            document.getElementById('opening-balance-display').textContent = data.opening_balance.toFixed(3) + ' g';
+            document.getElementById('last-balance-display').textContent = parseFloat(data.balance).toFixed(3) + ' g';
+            document.getElementById('opening-balance-display').textContent = parseFloat(data.opening_balance).toFixed(3) + ' g';
             document.getElementById('previous_balance').value = data.balance;
             document.getElementById('customer-info').style.display = 'block';
             calculateLive();
         })
-        .catch(() => {
+        .catch((err) => {
+            console.error('Balance fetch failed:', err);
             document.getElementById('customer-info').style.display = 'none';
+            document.getElementById('previous_balance').value = 0;
+            calculateLive();
         });
 }
 
@@ -653,9 +867,28 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     // Load existing receive rows
     existingReceiveData.forEach(d => addReceiveRow(d));
+
+    // First calculate without adjustments to get base rounded values
     calculateLive();
+
+    // Detect existing adjustments from stored invoice values
+    const storedWaste = <?= $invoice['waste_weight'] ?>;
+    const storedMaleWaste = <?= $invoice['male_waste'] ?>;
+
+    const calcWaste = parseFloat(document.getElementById('waste_weight_override').value) || 0;
+    const calcMaleWaste = parseFloat(document.getElementById('male_waste_override').value) || 0;
+
+    const wasteAdj = Math.round((storedWaste - calcWaste) * 1000) / 1000;
+    const maleWasteAdj = Math.round((storedMaleWaste - calcMaleWaste) * 1000) / 1000;
+
+    if (Math.abs(wasteAdj) > 0.0005 || Math.abs(maleWasteAdj) > 0.0005) {
+        document.getElementById('enable-adjustment').checked = true;
+        document.getElementById('waste-adjustment').value = wasteAdj.toFixed(3);
+        document.getElementById('male-waste-adjustment').value = maleWasteAdj.toFixed(3);
+        toggleAdjustment();
+        calculateLive(); // Recalculate with detected adjustments
+    }
 });
 </script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
-

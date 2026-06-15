@@ -20,7 +20,36 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
         return [];
     }
     
-    // Get invoices
+    $baseOpening = (float)($customer['opening_balance'] ?? 0);
+    
+    // ============================================================
+    // FIX: Calculate true opening balance for the selected date range
+    // Sum all transactions BEFORE the 'from' date and add to base opening
+    // ============================================================
+    $trueOpening = $baseOpening;
+    if ($from) {
+        // Sum net from invoices before the from date
+        $stmt = $db->prepare("
+            SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) as pre_net
+            FROM invoices 
+            WHERE customer_id = ? AND status = 'active' AND invoice_date < ?
+        ");
+        $stmt->execute([$customerId, $from]);
+        $preInvNet = (float)$stmt->fetchColumn();
+        
+        // Sum net from receipts before the from date (receipts reduce balance)
+        $stmt = $db->prepare("
+            SELECT COALESCE(SUM(total_khalis_weight), 0) as pre_rec
+            FROM gold_receipts 
+            WHERE customer_id = ? AND receipt_date < ?
+        ");
+        $stmt->execute([$customerId, $from]);
+        $preRecNet = (float)$stmt->fetchColumn();
+        
+        $trueOpening = $baseOpening + $preInvNet - $preRecNet;
+    }
+    
+    // Get invoices within date range
     $invoiceSql = "SELECT *, 'invoice' as txn_type, invoice_date as txn_date, id as txn_sort FROM invoices 
                    WHERE customer_id = ? AND status = 'active'";
     $invoiceParams = [$customerId];
@@ -39,7 +68,7 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
     $stmt->execute($invoiceParams);
     $invoices = $stmt->fetchAll();
     
-    // Get receipts
+    // Get receipts within date range
     $receiptSql = "SELECT *, 'receipt' as txn_type, receipt_date as txn_date, id as txn_sort FROM gold_receipts 
                    WHERE customer_id = ?";
     $receiptParams = [$customerId];
@@ -98,8 +127,8 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
         return $a['sort_id'] <=> $b['sort_id'];
     });
     
-    // Calculate running balance
-    $runningBalance = (float)($customer['opening_balance'] ?? 0);
+    // Calculate running balance starting from TRUE opening balance
+    $runningBalance = $trueOpening;
     
     foreach ($transactions as &$txn) {
         $txn['running_balance_before'] = round($runningBalance, 3);
@@ -108,7 +137,7 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
     }
     unset($txn);
     
-    // Totals
+    // Totals (only for transactions within the selected range)
     $totalEffectiveGold = array_sum(array_column($invoices, 'effective_gold'));
     $totalInvoiceReceived = array_sum(array_column($invoices, 'total_received_khalis'));
     $totalReceiptKhalis = array_sum(array_column($receipts, 'total_khalis_weight'));
@@ -117,7 +146,7 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
     
     return [
         'customer' => $customer,
-        'opening_balance' => round((float)$customer['opening_balance'] ?? 0, 3),
+        'opening_balance' => round($trueOpening, 3),  // <-- FIX: Use true opening, not base opening
         'transactions' => $transactions,
         'invoices' => $invoices,
         'receipts' => $receipts,
@@ -133,7 +162,7 @@ function getCustomerLedger(int $customerId, ?string $from = null, ?string $to = 
         'total_rp_mazdori' => round(array_sum(array_column($invoices, 'rp_mazdori_amount')), 3),
         'current_balance' => round($runningBalance, 3),
         'calculation_breakdown' => [
-            'opening' => round((float)$customer['opening_balance'] ?? 0, 3),
+            'opening' => round($trueOpening, 3),  // <-- FIX
             '+ given' => round($totalEffectiveGold, 3),
             '- received' => round($totalReceived, 3),
             '- wasooli' => round($totalWasooli, 3),
@@ -248,70 +277,47 @@ function getCustomerReport(int $customerId, string $from, string $to): array {
     
     if (!$customer) return [];
     
-    // Invoices
+    $baseOpening = (float)($customer['opening_balance'] ?? 0);
+    
+    // ============================================================
+    // FIX: Calculate true opening balance for the selected date range
+    // Sum all transactions BEFORE the 'from' date and add to base opening
+    // ============================================================
+    $trueOpening = $baseOpening;
+    
+    // Sum net from invoices before the from date
+    $stmt = $db->prepare("
+        SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) as pre_net
+        FROM invoices 
+        WHERE customer_id = ? AND status = 'active' AND invoice_date < ?
+    ");
+    $stmt->execute([$customerId, $from]);
+    $preInvNet = (float)$stmt->fetchColumn();
+    
+    // Sum net from receipts before the from date (receipts reduce balance)
+    $stmt = $db->prepare("
+        SELECT COALESCE(SUM(total_khalis_weight), 0) as pre_rec
+        FROM gold_receipts 
+        WHERE customer_id = ? AND receipt_date < ?
+    ");
+    $stmt->execute([$customerId, $from]);
+    $preRecNet = (float)$stmt->fetchColumn();
+    
+    $trueOpening = $baseOpening + $preInvNet - $preRecNet;
+    
+    // Invoices within range
     $stmt = $db->prepare("SELECT * FROM invoices WHERE customer_id = ? AND status = 'active' 
                           AND invoice_date >= ? AND invoice_date <= ? 
                           ORDER BY invoice_date ASC, id ASC");
     $stmt->execute([$customerId, $from, $to]);
     $invoices = $stmt->fetchAll();
     
-    // Receipts
+    // Receipts within range
     $stmt = $db->prepare("SELECT * FROM gold_receipts WHERE customer_id = ? 
                           AND receipt_date >= ? AND receipt_date <= ? 
                           ORDER BY receipt_date ASC, id ASC");
     $stmt->execute([$customerId, $from, $to]);
     $receipts = $stmt->fetchAll();
-    
-    // Build transactions
-    $transactions = [];
-    $allInvs = $db->prepare("SELECT id, effective_gold, wasooli, total_received_khalis, invoice_no, invoice_date 
-                            FROM invoices WHERE customer_id = ? AND status = 'active' 
-                            AND invoice_date <= ? ORDER BY invoice_date ASC, id ASC");
-    $allInvs->execute([$customerId, $to]);
-    $allInvoices = $allInvs->fetchAll();
-    
-    $allRecs = $db->prepare("SELECT id, total_khalis_weight, receipt_no, receipt_date 
-                            FROM gold_receipts WHERE customer_id = ? 
-                            AND receipt_date <= ? ORDER BY receipt_date ASC, id ASC");
-    $allRecs->execute([$customerId, $to]);
-    $allReceipts = $allRecs->fetchAll();
-    
-    // Start with opening balance
-    $rangeBalance = (float)$customer['opening_balance'];
-    
-    // Process all transactions up to date range
-    $allTransactions = [];
-    foreach ($allInvoices as $inv) {
-        $net = (float)$inv['effective_gold'] - (float)$inv['wasooli'] - (float)$inv['total_received_khalis'];
-        $allTransactions[] = [
-            'type' => 'invoice',
-            'date' => $inv['invoice_date'],
-            'id' => $inv['id'],
-            'amount' => $net,
-        ];
-    }
-    foreach ($allReceipts as $rec) {
-        $allTransactions[] = [
-            'type' => 'receipt',
-            'date' => $rec['receipt_date'],
-            'id' => $rec['id'],
-            'amount' => -((float)$rec['total_khalis_weight']),
-        ];
-    }
-    usort($allTransactions, function($a, $b) {
-        $c = strcmp($a['date'], $b['date']);
-        return $c !== 0 ? $c : $a['id'] - $b['id'];
-    });
-    
-    foreach ($allTransactions as $txn) {
-        $rangeBalance += $txn['amount'];
-    }
-    
-    $totalGoldKhalis = array_sum(array_column($invoices, 'gold_khalis'));
-    $totalEffective = array_sum(array_column($invoices, 'effective_gold'));
-    $totalInvoiceRec = array_sum(array_column($invoices, 'total_received_khalis'));
-    $totalWasooli = array_sum(array_column($invoices, 'wasooli'));
-    $totalRecKhalis = array_sum(array_column($receipts, 'total_khalis_weight'));
     
     // Build transaction list for display
     $displayTransactions = [];
@@ -345,12 +351,25 @@ function getCustomerReport(int $customerId, string $from, string $to): array {
         return $c !== 0 ? $c : $a['sort_id'] - $b['sort_id'];
     });
     
-    $runningBal = (float)$customer['opening_balance'];
+    // Calculate running balance starting from TRUE opening balance
+    $runningBal = $trueOpening;
     foreach ($displayTransactions as &$txn) {
         $runningBal += $txn['amount'];
         $txn['running_balance'] = round($runningBal, 3);
     }
     unset($txn);
+    
+    // Calculate current balance up to 'to' date (includes all transactions before and within range)
+    $rangeBalance = $trueOpening;
+    foreach ($displayTransactions as $txn) {
+        $rangeBalance += $txn['amount'];
+    }
+    
+    $totalGoldKhalis = array_sum(array_column($invoices, 'gold_khalis'));
+    $totalEffective = array_sum(array_column($invoices, 'effective_gold'));
+    $totalInvoiceRec = array_sum(array_column($invoices, 'total_received_khalis'));
+    $totalWasooli = array_sum(array_column($invoices, 'wasooli'));
+    $totalRecKhalis = array_sum(array_column($receipts, 'total_khalis_weight'));
     
     return [
         'customer' => $customer,
@@ -358,7 +377,7 @@ function getCustomerReport(int $customerId, string $from, string $to): array {
             'from' => date('d/m/Y', strtotime($from)),
             'to' => date('d/m/Y', strtotime($to)),
         ],
-        'opening_balance' => round((float)$customer['opening_balance'], 3),
+        'opening_balance' => round($trueOpening, 3),  // <-- FIX: Use true opening
         'total_invoices' => count($invoices),
         'total_gold_khalis' => round($totalGoldKhalis, 3),
         'total_grand_total' => round($totalEffective, 3),

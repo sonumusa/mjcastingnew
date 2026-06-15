@@ -36,6 +36,13 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="page-actions">
         <a href="<?= url('invoices/edit.php?id=' . $id) ?>" class="btn btn-primary"><i class="bi bi-pencil"></i> Edit</a>
         <a href="<?= url('invoices/print.php?id=' . $id) ?>" class="btn btn-success"><i class="bi bi-printer"></i> Print</a>
+        <?php if ($invoice['status'] === 'active'): ?>
+            <a href="<?= url('invoices/delete.php?id=' . $id) ?>" 
+               class="btn btn-danger" 
+               onclick="return confirmDelete('<?= htmlspecialchars($invoice['invoice_no']) ?>')">
+                <i class="bi bi-trash"></i> Delete
+            </a>
+        <?php endif; ?>
         <a href="<?= url('invoices/index.php') ?>" class="btn btn-outline"><i class="bi bi-arrow-left"></i> Back</a>
     </div>
 </div>
@@ -164,5 +171,11 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </div>
 <?php endif; ?>
+
+<script>
+function confirmDelete(invoiceNo) {
+    return confirm('Are you sure you want to delete/cancel invoice ' + invoiceNo + '?\n\nThis action will:\n• Mark the invoice as cancelled\n• Recalculate customer balance\n\nThis cannot be undone easily.');
+}
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>

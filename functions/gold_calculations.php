@@ -4,12 +4,44 @@
 // ============================================================
 
 /**
+ * Custom rounding: round to 2 decimal places with threshold at 8 (not 5).
+ * 
+ * Examples:
+ *   10.156 → 10.15  (third decimal 6 < 8, truncate)
+ *   10.154 → 10.15  (third decimal 4 < 8, truncate)
+ *   10.158 → 10.16  (third decimal 8 >= 8, round up)
+ *   10.159 → 10.16  (third decimal 9 >= 8, round up)
+ *   10.150 → 10.15  (third decimal 0 < 8, truncate)
+ */
+function customRoundTo2(float $value): float {
+    // Work with integers to avoid floating point issues
+    $scaled = (int) round($value * 1000);
+    $hundreds = intdiv($scaled, 10);      // value * 100 truncated
+    $remainder = abs($scaled) % 10;       // third decimal digit (0-9)
+    
+    // Handle negative numbers correctly
+    if ($scaled < 0) {
+        if ($remainder >= 8) {
+            return ($hundreds - 1) / 100;
+        } else {
+            return $hundreds / 100;
+        }
+    }
+    
+    if ($remainder >= 8) {
+        return ($hundreds + 1) / 100;
+    } else {
+        return $hundreds / 100;
+    }
+}
+
+/**
  * Calculate all invoice fields from input
  * 
  * Calculation Flow:
- * 1. Waste Weight = Casting Weight ÷ 10 × Ratti Deduction Rate
+ * 1. Waste Weight = Casting Weight ÷ 10 × Ratti Deduction Rate  [custom rounded to 2dp]
  * 2. Total Weight = Casting Weight + Waste Weight
- * 3. Male Waste = Total Weight ÷ 96 × Ratti
+ * 3. Male Waste = Total Weight ÷ 96 × Ratti                     [custom rounded to 2dp]
  * 4. Gold Khalis = Total Weight - Male Waste
  * 5. Effective Gold = Gold Khalis + RP Mazdori Weight + Casting Mazdori Weight
  * 6. Grand Total = Effective Gold (in grams)
@@ -29,19 +61,19 @@ function calculateGold(array $input): array {
     $previousBalance = parseDecimal($input['previous_balance'] ?? 0);
     $totalReceivedKhalis = parseDecimal($input['total_received_khalis'] ?? 0);
 
-    // Step 1: Waste Weight = Casting Weight ÷ 10 × Ratti Rate (g)
+    // Step 1: Waste Weight = Casting Weight ÷ 10 × Ratti Rate (custom rounded to 2dp)
     $wasteWeight = 0;
     if ($castingWeight > 0 && $rattiRate > 0) {
-        $wasteWeight = round(($castingWeight / 10) * $rattiRate, 3);
+        $wasteWeight = customRoundTo2(($castingWeight / 10) * $rattiRate);
     }
 
     // Step 2: Total Weight = Casting Weight + Waste Weight
     $totalWeight = round($castingWeight + $wasteWeight, 3);
 
-    // Step 3: Male Waste = Total Weight ÷ 96 × Ratti
+    // Step 3: Male Waste = Total Weight ÷ 96 × Ratti (custom rounded to 2dp)
     $maleWaste = 0;
     if ($totalWeight > 0 && $ratti > 0) {
-        $maleWaste = round(($totalWeight / 96) * $ratti, 3);
+        $maleWaste = customRoundTo2(($totalWeight / 96) * $ratti);
     }
 
     // Step 4: Gold Khalis = Total Weight - Male Waste
@@ -96,11 +128,17 @@ function calculateGold(array $input): array {
 /**
  * Convert impure gold gross weight to khalis pure gold using ratti formula
  * Formula: gross_weight - (gross_weight ÷ 96 × ratti_impurity)
- */
+
 function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
     if ($grossWeight <= 0) return 0;
     $khalis = $grossWeight - (($grossWeight / 96) * $rattiImpurity);
     return round($khalis, 3);
+} */
+
+function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
+    if ($grossWeight <= 0) return 0;
+    $khalis = $grossWeight - (($grossWeight / 96) * $rattiImpurity);
+    return customRoundTo2($khalis);
 }
 
 /**
@@ -204,9 +242,9 @@ function buildCalculationBreakdown(array $invoice): array {
             ['label' => 'Casting Weight', 'value' => $invoice['casting_weight'], 'unit' => 'g', 'formula' => 'Input'],
             ['label' => 'Ratti', 'value' => $invoice['ratti'], 'unit' => '', 'formula' => 'Input'],
             ['label' => 'Ratti Rate', 'value' => $invoice['ratti_rate'], 'unit' => 'g', 'formula' => 'From System Setting'],
-            ['label' => 'Waste Weight', 'value' => $invoice['waste_weight'], 'unit' => 'g', 'formula' => 'Casting ÷ 10 × Ratti Rate'],
+            ['label' => 'Waste Weight', 'value' => $invoice['waste_weight'], 'unit' => 'g', 'formula' => 'Casting ÷ 10 × Ratti Rate (custom rounded)'],
             ['label' => 'Total Weight', 'value' => $invoice['total_weight'], 'unit' => 'g', 'formula' => 'Casting + Waste'],
-            ['label' => 'Male Waste', 'value' => $invoice['male_waste'], 'unit' => 'g', 'formula' => 'Total Weight ÷ 96 × Ratti'],
+            ['label' => 'Male Waste', 'value' => $invoice['male_waste'], 'unit' => 'g', 'formula' => 'Total Weight ÷ 96 × Ratti (custom rounded)'],
             ['label' => 'Gold Khalis', 'value' => $invoice['gold_khalis'], 'unit' => 'g', 'formula' => 'Total Weight - Male Waste'],
             ['label' => 'RP Mazdori Weight', 'value' => $invoice['rp_mazdori_weight'], 'unit' => 'g', 'formula' => 'Input'],
             ['label' => 'Casting Mazdori Weight', 'value' => $invoice['casting_mazdori_weight'], 'unit' => 'g', 'formula' => 'Input'],

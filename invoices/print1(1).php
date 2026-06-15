@@ -54,204 +54,185 @@ $pageTitle = 'Print Receipt';
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
     <style>
-        @page { size: 145mm 200mm; margin: 0; }
+        @page { size: 148mm 210mm; margin: 0; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        html, body { 
-            height: 100%; 
-            overflow: hidden; 
-        }
-
         body { 
             margin: 0; 
             padding: 0; 
-            background: #f5f5f5; 
+            background: #fff; 
             color: #000; 
             font-family: 'Segoe UI', Arial, sans-serif; 
             -webkit-print-color-adjust: exact; 
-            font-size: 10pt;
+            font-size: 7pt;
             line-height: 1.2;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
         }
-
         .print-container { 
-            width: 145mm; 
-            height: 200mm;
-            background: #fff;
-            padding: 4mm;
+            width: 148mm; 
+            height: 210mm;
+            margin: 0 auto; 
+            padding: 3mm;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            box-shadow: 0 0 20px rgba(0,0,0,0.15);
         }
-
-        /* COMPACT 2-Column Header */
+        
+        /* Compact 2-Column Header */
         .header-compact {
             background: linear-gradient(135deg, #1e3a5f, #2d5a87);
             color: #fff;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 5px 10px;
-            border-radius: 3px 3px 0 0;
+            padding: 4px 8px;
+            border-radius: 2px 2px 0 0;
             border: 1px solid #1e3a5f;
-            flex-shrink: 0;
         }
         .header-col-left { text-align: left; }
         .header-col-left .shop-name-urdu {
             font-family: 'Noto Nastaliq Urdu', serif;
-            font-size: 14pt;
+            font-size: 10pt;
             font-weight: 700;
-            line-height: 1.3;
+            line-height: 1.2;
         }
         .header-col-left .shop-name {
-            font-size: 9pt;
+            font-size: 7pt;
             font-weight: 600;
             letter-spacing: 0.5px;
             opacity: 0.9;
         }
         .header-col-right {
             text-align: right;
-            font-size: 8pt;
-            line-height: 1.4;
+            font-size: 6.5pt;
+            line-height: 1.3;
         }
         .header-col-right .phone {
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 9pt;
+            font-size: 7pt;
         }
         .header-col-right .address {
-            font-size: 7pt;
+            font-size: 6pt;
             opacity: 0.9;
         }
-
+        
         /* Meta row */
         .meta-row {
             display: flex;
             justify-content: space-between;
             border: 1px solid #000;
             border-top: none;
-            padding: 3px 20px;
-            font-size: 8pt;
+            padding: 2px 24px;
+            font-size: 6pt;
             background: #fafafa;
-            flex-shrink: 0;
         }
         .meta-item { text-align: center; }
         .meta-item .label {
-            font-size: 7pt;
+            font-size: 5.5pt;
             color: #666;
             font-family: 'Noto Nastaliq Urdu', serif;
-            line-height: 2.2;
+            line-height: 2.1;
         }
         .meta-item .value {
             font-weight: 700;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 8pt;
+            font-size: 6.5pt;
         }
-
+        
         /* Party info */
         .party-row {
             border: 1px solid #000;
             border-top: none;
-            padding: 3px 6px;
-            font-size: 9pt;
+            padding: 2px 4px;
+            font-size: 6.5pt;
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
+            align-items: right;
         }
-        .party-name { font-weight: 700; font-size: 10pt; }
-
+        .party-name { font-weight: 700; font-size: 7pt; }
+        
         /* Main table */
         .main-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 2px;
-            font-size: 9pt;
-            table-layout: fixed;
-            flex-shrink: 0;
+            font-size: 6.5pt;
         }
         .main-table th {
             background: #e0e0e0;
             border: 1px solid #000;
-            padding: 3px 2px;
+            padding: 2px 1px;
             text-align: center;
             font-weight: 700;
-            font-size: 8pt;
+            font-size: 6pt;
         }
         .main-table th.urdu {
             font-family: 'Noto Nastaliq Urdu', serif;
-            font-size: 9pt;
-            line-height: 2.2;
+            font-size: 6.5pt;
+            line-height: 2.1;
         }
         .main-table td {
             border: 1px solid #000;
-            padding: 3px 3px;
+            padding: 2px 2px;
             text-align: center;
             vertical-align: middle;
         }
         .main-table td.desc {
             text-align: right;
             font-family: 'Noto Nastaliq Urdu', serif;
-            font-size: 9pt;
-            padding-right: 4px;
-            line-height: 2.2;
-            width: 45%;
+            font-size: 6.5pt;
+            padding-right: 3px;
+            line-height: 2.1;
         }
         .main-table td.number {
             font-family: 'JetBrains Mono', monospace;
             font-weight: 600;
-            font-size: 9pt;
+            font-size: 6.5pt;
         }
         .main-table td.remark {
             font-family: 'Noto Nastaliq Urdu', serif;
-            font-size: 8pt;
+            font-size: 6pt;
         }
         .main-table tr.highlight td {
             background: #f0f0f0;
             font-weight: 700;
-            line-height: 2.2;
+            line-height: 2.1;
         }
         .main-table tr.total-row td {
             background: #d0d0d0;
             font-weight: 700;
             border-top: 1.5px solid #000;
-            line-height: 2.2;
+            line-height: 2.1;
         }
-
+        
         /* Balance box */
         .balance-box {
             border: 1.5px solid #000;
             margin-top: 2px;
-            padding: 4px 12px;
+            padding: 3px 10px;
             background: #fffef0;
-            flex-shrink: 0;
         }
         .balance-title {
             text-align: center;
             font-family: 'Noto Nastaliq Urdu', serif;
             font-weight: 700;
-            font-size: 10pt;
+            font-size: 7.5pt;
             border-bottom: 1px solid #000;
-            padding-bottom: 2px;
+            padding-bottom: 1px;
             margin-bottom: 2px;
-            line-height: 2.2;
+            line-height: 2.1;
         }
         .balance-row {
             display: flex;
             justify-content: space-between;
-            padding: 2px 0;
-            font-size: 9pt;
+            padding: 1px 0;
+            font-size: 6.5pt;
         }
         .balance-row.total {
             border-top: 1.5px solid #000;
             margin-top: 2px;
-            padding-top: 3px;
+            padding-top: 2px;
             font-weight: 700;
-            font-size: 10pt;
+            font-size: 7.5pt;
         }
         .balance-label { font-family: 'Noto Nastaliq Urdu', serif; }
         .balance-value {
@@ -261,14 +242,14 @@ $pageTitle = 'Print Receipt';
         .balance-value.positive { color: #c00; }
         .balance-value.negative { color: #080; }
 
-        /* Horizontal Received Detail */
+        /* ===== NEW: Horizontal Received Detail IN BETWEEN Row ===== */
         .balance-row-received {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 2px 0;
-            font-size: 9pt;
-            gap: 8px;
+            font-size: 6.5pt;
+            gap: 6px;
         }
         .balance-row-received .balance-label {
             white-space: nowrap;
@@ -282,10 +263,10 @@ $pageTitle = 'Print Receipt';
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            font-size: 7pt;
+            font-size: 5pt;
             color: #444;
             font-family: 'JetBrains Mono', monospace;
-            line-height: 1.4;
+            line-height: 1.3;
             flex: 1;
             justify-content: center;
         }
@@ -301,7 +282,7 @@ $pageTitle = 'Print Receipt';
             color: #1e3a5f;
         }
         .r-ratti {
-            font-size: 6pt;
+            font-size: 4.5pt;
             color: #888;
             font-style: italic;
         }
@@ -309,23 +290,24 @@ $pageTitle = 'Print Receipt';
             color: #080;
             font-weight: 700;
         }
-
-        /* History section */
+        /* ===== END NEW ===== */
+        
+        /* History section - Compact */
         .history-section {
             margin-top: 2px;
             border: 1.5px solid #1e3a5f;
             background: #f8fbff;
-            flex-shrink: 0;
+            
         }
         .history-title {
             text-align: center;
             font-family: 'Noto Nastaliq Urdu', serif;
             font-weight: 700;
-            font-size: 10pt;
+            font-size: 7.5pt;
             background: #1e3a5f;
             color: #fff;
-            padding: 3px;
-            line-height: 2.2;
+            padding: 2px;
+            line-height: 2.1;
         }
         .history-row {
             display: flex;
@@ -334,29 +316,29 @@ $pageTitle = 'Print Receipt';
         .history-row:last-child { border-bottom: none; }
         .history-invoice {
             flex: 1;
-            padding: 3px 10px;
+            padding: 2px 10px;
             border-right: 1px solid #1e3a5f;
         }
         .history-invoice:last-child { border-right: none; }
         .history-invoice-header {
             text-align: center;
             font-weight: 700;
-            font-size: 7pt;
+            font-size: 6pt;
             border-bottom: 1px dashed #999;
             padding-bottom: 1px;
             margin-bottom: 2px;
             font-family: 'JetBrains Mono', monospace;
         }
         .history-invoice-header .inv-date {
-            font-size: 6pt;
+            font-size: 5.5pt;
             color: #666;
             font-weight: 400;
         }
         .history-item {
             display: flex;
             justify-content: space-between;
-            padding: 1px 0;
-            font-size: 7pt;
+            padding: 0.5px 0;
+            font-size: 5.5pt;
             border-bottom: 1px dotted #ddd;
         }
         .history-item:last-child { border-bottom: none; }
@@ -384,27 +366,25 @@ $pageTitle = 'Print Receipt';
             color: #c00;
             font-weight: 700;
         }
-
+        
         /* Footer note */
         .footer-note {
             border: 1px solid #000;
             border-top: none;
-            padding: 3px;
-            font-size: 7pt;
+            padding: 2px;
+            font-size: 5.5pt;
             text-align: center;
             color: #555;
             font-family: 'Noto Nastaliq Urdu', serif;
-            line-height: 1.4;
-            flex-shrink: 0;
+            line-height: 1.3;
         }
-
+        
         /* Signature */
         .signature-area {
             display: flex;
             justify-content: space-between;
             margin-top: 4px;
-            padding: 0 8px;
-            flex-shrink: 0;
+            padding: 0 6px;
         }
         .signature-box {
             width: 40%;
@@ -413,21 +393,16 @@ $pageTitle = 'Print Receipt';
         .signature-line {
             border-top: 1px solid #000;
             padding-top: 2px;
-            font-size: 8pt;
+            font-size: 6pt;
             font-family: 'Noto Nastaliq Urdu', serif;
         }
-
+        
         /* Print controls */
         .no-print { 
             padding: 10px; 
             text-align: center;
             background: #f0f0f0;
             border-bottom: 1px solid #ccc;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 1000;
         }
         .no-print button, .no-print a {
             padding: 5px 10px;
@@ -437,31 +412,15 @@ $pageTitle = 'Print Receipt';
             text-decoration: none;
             display: inline-block;
         }
-
+        
         @media print { 
             .no-print { display: none !important; } 
-            body { 
-                margin: 0; 
-                background: #fff;
-                align-items: flex-start;
-                justify-content: flex-start;
-            }
-            .print-container { 
-                width: 145mm; 
-                height: 200mm; 
-                padding: 4mm; 
-                box-shadow: none;
-            }
-        }
-
-        @media screen {
-            body {
-                padding-top: 50px;
-            }
+            body { margin: 0; }
+            .print-container { width: 148mm; height: 210mm; padding: 0; }
         }
     </style>
 </head>
-<body>
+<body >
 
     <div class="no-print">
         <button onclick="window.print()">🖨️ Print Receipt</button>
@@ -497,6 +456,7 @@ $pageTitle = 'Print Receipt';
             </div>
             <div class="meta-item">
                 <div class="label">بل نمبر </div>
+                  <!--<div class="value"><?= $invoice['id'] ?> </div> -->
                  <div class="value"><?= number_format($invoice['manual_book_no'], 0) ?></div>
             </div>
             <div class="meta-item">
@@ -516,10 +476,14 @@ $pageTitle = 'Print Receipt';
         <table class="main-table">
             <thead>
                 <tr>
-                    <th class="urdu">نام</th>
-                    <th class="urdu">رقم</th>
-                    <th class="urdu">وزن (گرام)</th>
+                        <th class="urdu">نام</th>
+                        <th class="urdu">رقم</th>
+                        <th class="urdu">وزن (گرام)</th>
                     <th class="urdu">نام اشیاء</th>
+                    
+                    
+                    
+                
                 </tr>
             </thead>
             <tbody>
@@ -530,26 +494,30 @@ $pageTitle = 'Print Receipt';
                     <td class="desc">کاسٹنگ وزن (گرام)</td>
                 </tr>
                 <tr>
-                    <td class="number">-</td>
+                                        <td class="number">-</td>
                     <td class="remark"></td>
+
                     <td class="number"><?= number_format($invoice['waste_weight'], 3) ?></td>
                     <td class="desc">ویسٹ (گرام)</td>
                 </tr>
                 <tr class="highlight">
-                    <td class="number">-</td>
+                                        <td class="number">-</td>
                     <td class="remark"></td>
+
                     <td class="number"><?= number_format($invoice['total_weight'], 3) ?></td>
                     <td class="desc">کل وزن (گرام)</td>
                 </tr>
                 <tr>
-                    <td class="number">-</td>
+                                        <td class="number">-</td>
                     <td class="remark"></td>
+
                     <td class="number"><?= number_format($invoice['male_waste'], 3) ?></td>
                     <td class="desc">میل کاٹ (گرام)</td>
                 </tr>
                 <tr>
-                    <td class="number">-</td>
+                                        <td class="number">-</td>
                     <td class="remark"></td>
+
                     <td class="number"><?= number_format($invoice['gold_khalis'], 3) ?></td>
                     <td class="desc"> (گرام)خالص وزن</td>
                 </tr>
@@ -557,21 +525,26 @@ $pageTitle = 'Print Receipt';
                 <tr>
                     <td class="remark">(روپے)آر پی مزدوری </td>
                     <td class="number"><?= number_format($invoice['rp_mazdori_amount'], 0) ?></td>
+
+                                      
                     <td class="number"><?= number_format($invoice['rp_mazdori_weight'], 3) ?></td>
-                    <td class="desc"> (گرام)آر پی مزدوری</td>
+                      <td class="desc"> (گرام)آر پی مزدوری</td>
                 </tr>
                 <?php endif; ?>
                 <?php if ((float)$invoice['casting_mazdori_weight'] > 0): ?>
                 <tr>
-                    <td class="remark">(روپے)کاسٹنگ مزدوری</td>
+<td class="remark">(روپے)کاسٹنگ مزدوری</td>
                     <td class="number"><?= number_format($invoice['casting_mazdori_amount'], 0) ?></td>
+                    
+                                   
                     <td class="number"><?= number_format($invoice['casting_mazdori_weight'], 3) ?></td>
-                    <td class="desc"> (گرام)کاسٹنگ مزدوری</td>
+                         <td class="desc"> (گرام)کاسٹنگ مزدوری</td>
                 </tr>
                 <?php endif; ?>
                 <tr class="total-row">
-                    <td class="number">-</td>
+                                        <td class="number">-</td>
                     <td class="remark">-</td>
+
                     <td class="number"><?= number_format($invoice['effective_gold'], 3) ?></td>
                     <td class="desc">(خالص بیلنس(گرام</td>
                 </tr>
@@ -580,18 +553,23 @@ $pageTitle = 'Print Receipt';
 
         <!-- BALANCE BOX -->
         <div class="balance-box">
+           <!--  <div class="balance-title">بیلنس کا خلاصہ</div> -->
             <div class="balance-row">
-                <span class="balance-value"><?= number_format($invoice['previous_balance'], 3) ?> g</span>
+                 <span class="balance-value"><?= number_format($invoice['previous_balance'], 3) ?> g</span>
                 <span class="balance-label">سابقہ بیلنس:</span>
+               
             </div>
             <div class="balance-row">
                 <span class="balance-value"><?= number_format($invoice['effective_gold'], 3) ?> g</span>
                 <span class="balance-label">+ ٹوٹل خالص:</span>
+                
             </div>
 
             <?php if (!empty($receives)): ?>
+            <!-- ===== NEW: Horizontal Received Detail IN BETWEEN ===== -->
             <div class="balance-row-received">
                 <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
+                
                 <div class="received-details-horizontal">
                     <?php foreach ($receives as $rec): ?>
                         <?php 
@@ -602,8 +580,10 @@ $pageTitle = 'Print Receipt';
                         ?>
                         <span class="r-item">{
                             <?php if ((float)$rec['ratti_impurity'] > 0): ?>
+                                <!-- Has Ratti: Show desc, gross, ratti, and khalis -->
                                 <span class="r-name"><?= $desc ?></span>:<span class="r-gross"><?= $gross ?></span> (رتی <span class="r-ratti"><?= $ratti ?></span>) = <span class="r-khalis"><?= $khalis ?></span>
                             <?php else: ?>
+                                <!-- No Ratti: Show only desc and khalis -->
                                 <span class="r-name"><?= $desc ?></span>: <span class="r-khalis"><?= $khalis ?></span>
                             <?php endif; ?>
                         },</span>
@@ -611,7 +591,9 @@ $pageTitle = 'Print Receipt';
                 </div>
                 <span class="balance-label">- وصولی (سونا):</span>
             </div>
+            <!-- ===== END NEW ===== -->
             <?php elseif ((float)$invoice['total_received_khalis'] > 0): ?>
+            <!-- Fallback for legacy data without receive rows -->
             <div class="balance-row">
                 <span class="balance-label">- وصولی (سونا):</span>
                 <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
@@ -624,8 +606,9 @@ $pageTitle = 'Print Receipt';
                 <span class="balance-value"><?= number_format($invoice['wasooli'], 3) ?> g</span>
             </div>
             <?php endif; ?>
-
+            
             <div class="balance-row total">
+                
                 <span class="balance-value <?= $invoice['remaining_balance'] > 0 ? 'positive' : 'negative' ?>">
                     <?= number_format($invoice['remaining_balance'], 3) ?> g
                 </span>
@@ -645,45 +628,54 @@ $pageTitle = 'Print Receipt';
                         <span class="inv-date">(<?= date('d-m-Y', strtotime($prev['invoice_date'])) ?>)</span>
                     </div>
                     <div class="history-item">
+                       
                         <span class="hist-value"><?= number_format($prev['ratti'], 0) ?> رتی</span>
-                        <span class="hist-label">رتی:</span>
+                         <span class="hist-label">رتی:</span>
                     </div>
                     <div class="history-item">
+                        
                         <span class="hist-value"><?= number_format($prev['total_weight'], 3) ?> (گرام)</span>
                         <span class="hist-label">گولڈ کاسٹنگ:</span>
                     </div>
                     <div class="history-item">
+                       
                         <span class="hist-value"><?= number_format($prev['gold_khalis'], 3) ?> (گرام)</span>
-                        <span class="hist-label">کل خالص:</span>
+                         <span class="hist-label">کل خالص:</span>
                     </div>
                     <div class="history-item">
+                        
                         <span class="hist-value"><?= number_format($prev['rp_mazdori_weight'] ?? 0, 3) ?> (گرام) </span>
                         <span class="hist-label">آر پی وزن:</span>
                     </div>
                     <div class="history-item">
+                        
                         <span class="hist-value"><?= number_format($prev['casting_mazdori_weight'] ?? 0, 3) ?> (گرام) </span>
                         <span class="hist-label">کاسٹنگ مزدوری:</span>
                     </div>
                     <div class="history-item total-gold">
+                       
                         <span class="hist-value"><strong><?= number_format($prev['effective_gold'] ?? 0, 3) ?> (گرام) </strong></span>
-                        <span class="hist-label"><strong>کل سونا:</strong></span>
+                         <span class="hist-label"><strong>کل سونا:</strong></span>
                     </div>
                     <div class="history-item">
+                        
                         <span class="hist-value"><strong><?= number_format($prev['total_received_khalis'] ?? 0, 3) ?> (گرام) </strong></span>
                         <span class="hist-label"><strong>وصولی:</strong></span>
                     </div>
                     <div class="history-item">
+                       
                         <span class="hist-value"><strong><?= number_format($prev['previous_balance'] ?? 0, 3) ?> (گرام) </strong></span>
-                        <span class="hist-label"><strong>سابقہ بیلنس:</strong></span>
+                         <span class="hist-label"><strong>سابقہ بیلنس:</strong></span>
                     </div>
                     <div class="history-item balance-due">
+                     
                         <span class="hist-value"><strong><?= number_format($prev['remaining_balance'] ?? 0, 3) ?> (گرام) </strong></span>
-                        <span class="hist-label"><strong>بقایا بیلنس:</strong></span>
+                           <span class="hist-label"><strong>بقایا بیلنس:</strong></span>
                     </div>
                 </div>
                 <?php endforeach; ?>
                 <?php if (count($prevInvoices) < 2): ?>
-                <div class="history-invoice" style="text-align:center; padding:10px; color:#999; font-size:7pt; font-family:'Noto Nastaliq Urdu',serif;">
+                <div class="history-invoice" style="text-align:center; padding:10px; color:#999; font-size:6pt; font-family:'Noto Nastaliq Urdu',serif;">
                     کوئی پچھلا انوائس نہیں
                 </div>
                 <?php endif; ?>
@@ -707,7 +699,7 @@ $pageTitle = 'Print Receipt';
         </div>
 
         <!-- BOTTOM INFO -->
-        <div style="text-align:center; margin-top:2px; font-size:6pt; color:#888;">
+        <div style="text-align:center; margin-top:2px; font-size:5pt; color:#888;">
             <?= htmlspecialchars($workshopName) ?> | Printed: <?= date('d-m-Y h:i A') ?>
         </div>
 
