@@ -5,9 +5,9 @@
 
 // Database configuration
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'u217484998_mjcasting');
-define('DB_USER', 'u217484998_rehman1');
-define('DB_PASS', '@@Irhaa786');
+define('DB_NAME', 'mj_casting_wax');
+define('DB_USER', 'root');
+define('DB_PASS', '');
 
 // Site configuration
 define('SITE_NAME', 'M.J Casting');
@@ -111,37 +111,20 @@ function getCurrentUser(): ?array {
 function getBaseUrl(): string {
     $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-
-    $rootPath = '';
-    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
-        $documentRoot = realpath($_SERVER['DOCUMENT_ROOT']);
-        $rootDir = realpath(__DIR__);
-        if ($documentRoot !== false && $rootDir !== false) {
-            $documentRoot = str_replace('\\', '/', $documentRoot);
-            $rootDir = str_replace('\\', '/', $rootDir);
-            if (strpos($rootDir, $documentRoot) === 0) {
-                $rootPath = substr($rootDir, strlen($documentRoot));
-            }
-        }
+    $scriptPath = $_SERVER['SCRIPT_NAME'];
+    
+    // Find where 'mjcasting' is in the path
+    $pos = strpos($scriptPath, '/mjcasting/');
+    
+    if ($pos !== false) {
+        // Extract everything up to and including /mjcasting/
+        $basePath = substr($scriptPath, 0, $pos + strlen('/mjcasting/'));
+    } else {
+        // Fallback for root level
+        $basePath = rtrim(dirname($scriptPath), '/\\') . '/';
     }
-
-    if ($rootPath === '') {
-        $scriptName = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
-        $rootFolder = basename(__DIR__);
-        $search = '/' . $rootFolder . '/';
-        if ($rootFolder && strpos($scriptName, $search) !== false) {
-            $rootPath = substr($scriptName, 0, strpos($scriptName, $search) + strlen($rootFolder));
-        } else {
-            $rootPath = '';
-        }
-    }
-
-    $rootPath = '/' . trim($rootPath, '/');
-    if ($rootPath === '/') {
-        $rootPath = '';
-    }
-
-    return rtrim($protocol . $host . $rootPath, '/') . '/';
+    
+    return $protocol . $host . $basePath;
 }
 
 function url(string $path = ''): string {

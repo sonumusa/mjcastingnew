@@ -88,46 +88,207 @@ $pageTitle = 'Print Receipt';
             box-shadow: 0 0 20px rgba(0,0,0,0.15);
         }
 
-        /* COMPACT 2-Column Header */
-        .header-compact {
-            background: linear-gradient(135deg, #1e3a5f, #2d5a87);
-            color: #fff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 5px 10px;
-            border-radius: 3px 3px 0 0;
-            border: 1px solid #1e3a5f;
-            flex-shrink: 0;
-        }
-        .header-col-left { text-align: left; }
-        .header-col-left .shop-name-urdu {
-            font-family: 'Noto Nastaliq Urdu', serif;
-            font-size: 14pt;
-            font-weight: 700;
-            line-height: 1.3;
-        }
-        .header-col-left .shop-name {
-            font-size: 9pt;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            opacity: 0.9;
-        }
-        .header-col-right {
-            text-align: right;
-            font-size: 8pt;
-            line-height: 1.4;
-        }
-        .header-col-right .phone {
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 9pt;
-        }
-        .header-col-right .address {
-            font-size: 7pt;
-            opacity: 0.9;
-        }
+/* VARIANT 1 PREMIUM HEADER */
+.premium-header-v1 {
+    height: 70px;
+    display: flex;
+    align-items: center;
+    background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
+    border: 2px solid #c79b2b;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    position: relative;
+}
 
+/* Left Section */
+.header-left {
+    width: 110px;
+    height: 80%;
+    background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-right: 3px solid #c79b2b;
+    position: relative;
+}
+
+.header-left::after {
+    content: '';
+    position: absolute;
+    right: -20px;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: #fff;
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.logo-hexagon {
+    width: 55px;
+    height: 55px;
+    border: 3px solid #d9b14a;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 5px;
+    background: rgba(217, 177, 74, 0.1);
+}
+
+.logo-mj {
+    font-size: 11px;
+    font-weight: 800;
+    color: #d9b14a;
+    letter-spacing: 1px;
+}
+
+.logo-text {
+    font-size: 7px;
+    color: #d9b14a;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+/* Center Section */
+.header-center {
+    flex: 1;
+    background: linear-gradient(90deg, #fff 0%, #fefefe 100%);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 0 20px;
+    position: relative;
+}
+
+.header-center::before {
+    content: '';
+    position: absolute;
+    left: -15px;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.header-center::after {
+    content: '';
+    position: absolute;
+    right: -15px;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
+    clip-path: polygon(100% 0, 0 50%, 100% 100%);
+    
+
+}
+
+.company-name-en {
+    font-size: 20pt;
+    font-weight: 800;
+    color: #0f2f4f;
+    letter-spacing: 2px;
+    margin-bottom: 0px;
+}
+
+.company-tagline {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #b78916;
+    letter-spacing: 1.5px;
+    margin-bottom: 0px;
+    text-transform: uppercase;
+}
+
+.contact-info {
+    display: flex;
+    gap: 0px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.contact-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 6pt;
+    font-weight: 600;
+    color: #222;
+}
+
+.contact-item .icon {
+    font-size: 7pt;
+    color: #0f2f4f;
+}
+
+/* Right Section */
+.header-right {
+    width: 160px;
+    height: 100%;
+    background: linear-gradient(135deg, #143f67 0%, #0f2f4f 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-left: 3px solid #c79b2b;
+    position: relative;
+    padding: 5px;
+}
+
+.header-right::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
+    clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.urdu-main {
+    font-family: 'Noto Nastaliq Urdu', serif;
+    font-size: 14pt;
+    font-weight: 700;
+    color: #d9b14a;
+    line-height: 1.8;
+    margin-bottom: 2px;
+}
+
+.urdu-sub {
+    font-family: 'Noto Nastaliq Urdu', serif;
+    font-size: 8pt;
+    color: #d9b14a;
+    line-height: 1.6;
+    margin-bottom: 3px;
+}
+
+.urdu-divider {
+    color: #d9b14a;
+    font-size: 8pt;
+    margin-top: 2px;
+}
+
+/* Adjust print container padding */
+.print-container {
+    width: 145mm;
+    height: 200mm;
+    background: #fff;
+    padding: 3mm;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0,0,0,0.15);
+}
+        /* Meta row */
         /* Meta row */
         .meta-row {
             display: flex;
@@ -151,7 +312,6 @@ $pageTitle = 'Print Receipt';
             font-family: 'JetBrains Mono', monospace;
             font-size: 8pt;
         }
-
         /* Party info */
         .party-row {
             border: 1px solid #000;
@@ -471,20 +631,39 @@ $pageTitle = 'Print Receipt';
 
     <div class="print-container">
 
-        <!-- COMPACT 2-COLUMN HEADER -->
-        <div class="header-compact">
-            <div class="header-col-left">
-                <div class="shop-name-urdu"><?= htmlspecialchars($workshopNameUrdu) ?></div>
-                <div class="shop-name"><?= htmlspecialchars($workshopName) ?></div>
-            </div>
-            <div class="header-col-right">
-                <div class="phone">📞 <?= htmlspecialchars($workshopPhone ?: '') ?><?= $workshopPhone2 ? ' | ' . htmlspecialchars($workshopPhone2) : '' ?></div>
-                <?php if ($workshopAddress): ?>
-                <div class="address"><?= htmlspecialchars($workshopAddress) ?></div>
-                <?php endif; ?>
-            </div>
+<!-- PREMIUM VARIANT 1 HEADER -->
+<div class="premium-header-v1">
+    <!-- Left Section - Dark Blue with Logo -->
+    <div class="header-left">
+        <div class="logo-hexagon">
+            <div class="logo-mj">MJ</div>
         </div>
+        <div class="logo-text">GOLD CASTING</div>
+    </div>
+    
+    <!-- Center Section - White/Cream -->
+    <div class="header-center">
+        <div class="company-name-en">MJ CASTING</div>
+        <div class="contact-info">
+            <div class="contact-item">
+                <span class="icon">📍</span>
+                <span> <?= htmlspecialchars($workshopAddress) ?></span>
+            </div>
+            <div class="contact-item">
+                <span class="icon">📞</span>
+                <span><?= htmlspecialchars($workshopPhone) ?></span><span><?= htmlspecialchars($workshopPhone2) ?></span> <span><?= htmlspecialchars($workshopPhone3) ?></span>
+            </div>
 
+        </div>
+    </div>
+    
+    <!-- Right Section - Dark Blue with Urdu -->
+    <div class="header-right">
+        <div class="urdu-main"><?= htmlspecialchars($workshopNameUrdu) ?></div>
+        <div class="urdu-sub">گولڈ کاسٹنگ اینڈ جیولری ورکس</div>
+        <div class="urdu-divider">◆◆◆</div>
+    </div>
+</div>
         <!-- META ROW -->
         <div class="meta-row">
             <div class="meta-item">
@@ -697,19 +876,15 @@ $pageTitle = 'Print Receipt';
         </div>
 
         <!-- SIGNATURE -->
-        <div class="signature-area">
-            <div class="signature-box">
-                <div ></div>
-            </div>
-            <div class="signature-box">
-                <div class="signature-line">دستخط</div>
-            </div>
+        <div class="footer-note" style="font-size:7px">
+            <div >This document is computer generated and does not require any stamp/signature</div>
+            <div style="text-align:center; margin-top:2px; font-size:6pt; color:#888;">
+            <?= htmlspecialchars($workshopName) ?> | Printed: <?= date('d-m-Y h:i A') ?>
+        </div>
         </div>
 
         <!-- BOTTOM INFO -->
-        <div style="text-align:center; margin-top:2px; font-size:6pt; color:#888;">
-            <?= htmlspecialchars($workshopName) ?> | Printed: <?= date('d-m-Y h:i A') ?>
-        </div>
+        
 
     </div>
 </body>
