@@ -34,6 +34,12 @@ $stmt = $db->prepare("SELECT i.*, c.name as customer_name
 $stmt->execute([$invoice['customer_id'], $id]);
 $prevInvoices = $stmt->fetchAll();
 
+
+function formatRattiPrint($value): string {
+    $v = (float)$value;
+    return abs($v - round($v)) < 0.0001 ? number_format($v, 0) : number_format($v, 1);
+}
+
 $workshopName = getSetting('workshop_name', 'M.J Casting');
 $workshopNameUrdu = getSetting('workshop_name_urdu', 'ایم جے کاسٹنگ');
 $workshopAddress = getSetting('address', '');
@@ -51,7 +57,8 @@ $pageTitle = 'Print Receipt';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receipt - <?= htmlspecialchars($invoice['invoice_no']) ?></title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Changed from JetBrains Mono to Roboto Mono to remove the dot in zero -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
     <style>
         @page { size: 145mm 200mm; margin: 0; }
@@ -186,8 +193,6 @@ $pageTitle = 'Print Receipt';
     width: 30px;
     background: linear-gradient(135deg, #0f2f4f 0%, #143f67 100%);
     clip-path: polygon(100% 0, 0 50%, 100% 100%);
-    
-
 }
 
 .company-name-en {
@@ -288,7 +293,7 @@ $pageTitle = 'Print Receipt';
     overflow: hidden;
     box-shadow: 0 0 20px rgba(0,0,0,0.15);
 }
-        /* Meta row */
+
         /* Meta row */
         .meta-row {
             display: flex;
@@ -309,9 +314,10 @@ $pageTitle = 'Print Receipt';
         }
         .meta-item .value {
             font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif; 
             font-size: 8pt;
         }
+
         /* Party info */
         .party-row {
             border: 1px solid #000;
@@ -362,7 +368,7 @@ $pageTitle = 'Print Receipt';
             width: 45%;
         }
         .main-table td.number {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif; 
             font-weight: 600;
             font-size: 9pt;
         }
@@ -415,7 +421,7 @@ $pageTitle = 'Print Receipt';
         }
         .balance-label { font-family: 'Noto Nastaliq Urdu', serif; }
         .balance-value {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif; 
             font-weight: 700;
         }
         .balance-value.positive { color: #c00; }
@@ -444,7 +450,7 @@ $pageTitle = 'Print Receipt';
             gap: 6px;
             font-size: 7pt;
             color: #444;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Noto Nastaliq Urdu', serif;
             line-height: 1.4;
             flex: 1;
             justify-content: center;
@@ -505,7 +511,7 @@ $pageTitle = 'Print Receipt';
             border-bottom: 1px dashed #999;
             padding-bottom: 1px;
             margin-bottom: 2px;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif; 
         }
         .history-invoice-header .inv-date {
             font-size: 6pt;
@@ -525,7 +531,7 @@ $pageTitle = 'Print Receipt';
             color: #444;
         }
         .history-item .hist-value {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'Noto Nastaliq Urdu', serif;
             font-weight: 600;
         }
         .history-item.total-gold {
@@ -619,6 +625,13 @@ $pageTitle = 'Print Receipt';
                 padding-top: 50px;
             }
         }
+
+                <?php if (query('bulk_jpg')): ?>
+        /* Bulk JPG export: capture the exact receipt only, without toolbar/screen offset */
+        .no-print { display: none !important; }
+        body { padding-top: 0 !important; background: #fff !important; justify-content: flex-start !important; }
+        .print-container { box-shadow: none !important; margin: 0 auto !important; }
+        <?php endif; ?>
     </style>
 </head>
 <body>
@@ -676,11 +689,12 @@ $pageTitle = 'Print Receipt';
             </div>
             <div class="meta-item">
                 <div class="label">بل نمبر </div>
-                 <div class="value"><?= number_format($invoice['manual_book_no'], 0) ?></div>
+                 <div class="value"><?= htmlspecialchars($invoice['manual_book_no'] ?: '-') ?></div>
             </div>
             <div class="meta-item">
                 <div class="label">رتی</div>
-                <div class="value"><?= number_format($invoice['ratti'], 0) ?></div>
+              
+                <div class="value"><?= formatRattiPrint($invoice['ratti']) ?></div>
             </div>
         </div>
 
@@ -759,58 +773,108 @@ $pageTitle = 'Print Receipt';
 
         <!-- BALANCE BOX -->
         <div class="balance-box">
-            <div class="balance-row">
-                <span class="balance-value"><?= number_format($invoice['previous_balance'], 3) ?> g</span>
-                <span class="balance-label">سابقہ بیلنس:</span>
-            </div>
-            <div class="balance-row">
-                <span class="balance-value"><?= number_format($invoice['effective_gold'], 3) ?> g</span>
-                <span class="balance-label">+ ٹوٹل خالص:</span>
+            <?php
+                $prevBal = (float)$invoice['previous_balance'];
+                $prevBalWord = $prevBal > 0 ? '(لینا) ' : ($prevBal < 0 ? '(جمع) ' : '');
+                $remBal = (float)$invoice['remaining_balance'];
+                $remBalWord = $remBal > 0 ? '(لینا) ' : ($remBal < 0 ? '(جمع) ' : '');
+                $remBalClass = $remBal > 0 ? 'positive' : ($remBal < 0 ? 'negative' : '');
+                $remBalStyle = '';
+                if ($remBal == 0) {
+                    $remBalStyle = 'background-color: #d4edda; color: #155724; padding: 4px 12px; margin: -4px -12px;';
+                }
+            ?>
+            
+            <!-- Row 1: Previous Balance -->
+            <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 2; min-height: 20px;"></div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value"><?= $prevBalWord ?><?= number_format(abs($prevBal), 3) ?> g</span>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">سابقہ بیلنس:</span>
+                </div>
             </div>
 
-            <?php if (!empty($receives)): ?>
-            <div class="balance-row-received">
-                <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
-                <div class="received-details-horizontal">
-                    <?php foreach ($receives as $rec): ?>
-                        <?php 
-                            $desc = htmlspecialchars($rec['description'] ?: 'خالص');
-                            $gross = number_format($rec['gross_weight'], 3);
-                            $ratti = number_format($rec['ratti_impurity'], 0);
-                            $khalis = number_format($rec['khalis_weight'], 3);
-                        ?>
-                        <span class="r-item">{
-                            <?php if ((float)$rec['ratti_impurity'] > 0): ?>
-                                <span class="r-name"><?= $desc ?></span>:<span class="r-gross"><?= $gross ?></span> (رتی <span class="r-ratti"><?= $ratti ?></span>) = <span class="r-khalis"><?= $khalis ?></span>
-                            <?php else: ?>
-                                <span class="r-name"><?= $desc ?></span>: <span class="r-khalis"><?= $khalis ?></span>
-                            <?php endif; ?>
-                        },</span>
-                    <?php endforeach; ?>
+            <!-- Row 2: Total Khalis -->
+            <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 2; min-height: 20px;"></div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value"><?= number_format($invoice['effective_gold'], 3) ?> g</span>
                 </div>
-                <span class="balance-label">- وصولی (سونا):</span>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">+ ٹوٹل خالص:</span>
+                </div>
+            </div>
+
+            <!-- Row 3: Received Gold -->
+            <?php if (!empty($receives)): ?>
+            <div class="balance-row-received" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 2; text-align: left;">
+                    <div class="received-details-horizontal">
+                        <?php foreach ($receives as $rec): ?>
+                            <?php 
+                                $desc = htmlspecialchars($rec['description'] ?: 'خالص');
+                                $gross = number_format($rec['gross_weight'], 3);
+                                $ratti = formatRattiPrint($rec['ratti_impurity']);
+                                $khalis = number_format($rec['khalis_weight'], 3);
+                            ?>
+                            <span class="r-item">{
+                                <?php if ((float)$rec['ratti_impurity'] > 0): ?>
+                                    <span class="r-name"><?= $desc ?></span>:<span class="r-gross"><?= $gross ?></span> (رتی <span class="r-ratti"><?= $ratti ?></span>) = <span class="r-khalis"><?= $khalis ?></span>
+                                <?php else: ?>
+                                    <span class="r-name"><?= $desc ?></span>: <span class="r-khalis"><?= $khalis ?> g</span>
+                                <?php endif; ?>
+                            },</span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">- وصولی (سونا):</span>
+                </div>
             </div>
             <?php elseif ((float)$invoice['total_received_khalis'] > 0): ?>
-            <div class="balance-row">
-                <span class="balance-label">- وصولی (سونا):</span>
-                <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
+            <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 2; min-height: 20px;"></div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value"><?= number_format($invoice['total_received_khalis'], 3) ?> g</span>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">- وصولی (سونا):</span>
+                </div>
             </div>
             <?php endif; ?>
 
+            <!-- Row 4: Cash Received -->
             <?php if ((float)$invoice['wasooli'] > 0): ?>
-            <div class="balance-row">
-                <span class="balance-label">- وصولی (کیش):</span>
-                <span class="balance-value"><?= number_format($invoice['wasooli'], 3) ?> g</span>
+            <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 2; min-height: 20px;"></div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value"><?= number_format($invoice['wasooli'], 3) ?> g</span>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">- وصولی (کیش):</span>
+                </div>
             </div>
             <?php endif; ?>
 
-            <div class="balance-row total">
-                <span class="balance-value <?= $invoice['remaining_balance'] > 0 ? 'positive' : 'negative' ?>">
-                    <?= number_format($invoice['remaining_balance'], 3) ?> g
-                </span>
-                <span class="balance-label">باقی بیلنس:</span>
+            <!-- Row 5: Remaining Balance -->
+            <div class="balance-row total" style="display: flex; justify-content: space-between; align-items: center; <?= $remBalStyle ?>">
+                <div style="flex: 2; min-height: 20px;"></div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-value <?= $remBalClass ?>">
+                        <?= $remBalWord ?><?= number_format(abs($remBal), 3) ?> g
+                    </span>
+                </div>
+                <div style="flex: 1; text-align: right;">
+                    <span class="balance-label">باقی بیلنس:</span>
+                </div>
             </div>
         </div>
+        
 
         <!-- PREVIOUS INVOICES HISTORY -->
         <?php if (count($prevInvoices) > 0): ?>
@@ -824,39 +888,39 @@ $pageTitle = 'Print Receipt';
                         <span class="inv-date">(<?= date('d-m-Y', strtotime($prev['invoice_date'])) ?>)</span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><?= number_format($prev['ratti'], 0) ?> رتی</span>
+                        <span class="hist-value"><?= formatRattiPrint($prev['ratti']) ?>&nbsp;&nbsp; رتی اندر</span>
                         <span class="hist-label">رتی:</span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><?= number_format($prev['total_weight'], 3) ?> (گرام)</span>
+                        <span class="hist-value"><?= number_format($prev['total_weight'], 3) ?> &nbsp;&nbsp; (گرام)</span>
                         <span class="hist-label">گولڈ کاسٹنگ:</span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><?= number_format($prev['gold_khalis'], 3) ?> (گرام)</span>
+                        <span class="hist-value"><?= number_format($prev['gold_khalis'], 3) ?>&nbsp;&nbsp;  (گرام)</span>
                         <span class="hist-label">کل خالص:</span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><?= number_format($prev['rp_mazdori_weight'] ?? 0, 3) ?> (گرام) </span>
+                        <span class="hist-value"><?= number_format($prev['rp_mazdori_weight'] ?? 0, 3) ?> &nbsp;&nbsp; (گرام) </span>
                         <span class="hist-label">آر پی وزن:</span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><?= number_format($prev['casting_mazdori_weight'] ?? 0, 3) ?> (گرام) </span>
+                        <span class="hist-value"><?= number_format($prev['casting_mazdori_weight'] ?? 0, 3) ?> &nbsp;&nbsp; (گرام) </span>
                         <span class="hist-label">کاسٹنگ مزدوری:</span>
                     </div>
                     <div class="history-item total-gold">
-                        <span class="hist-value"><strong><?= number_format($prev['effective_gold'] ?? 0, 3) ?> (گرام) </strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['effective_gold'] ?? 0, 3) ?> &nbsp;&nbsp; (گرام) </strong></span>
                         <span class="hist-label"><strong>کل سونا:</strong></span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><strong><?= number_format($prev['total_received_khalis'] ?? 0, 3) ?> (گرام) </strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['total_received_khalis'] ?? 0, 3) ?>&nbsp;&nbsp; (گرام) </strong></span>
                         <span class="hist-label"><strong>وصولی:</strong></span>
                     </div>
                     <div class="history-item">
-                        <span class="hist-value"><strong><?= number_format($prev['previous_balance'] ?? 0, 3) ?> (گرام) </strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['previous_balance'] ?? 0, 3) ?>&nbsp;&nbsp; (گرام) </strong></span>
                         <span class="hist-label"><strong>سابقہ بیلنس:</strong></span>
                     </div>
                     <div class="history-item balance-due">
-                        <span class="hist-value"><strong><?= number_format($prev['remaining_balance'] ?? 0, 3) ?> (گرام) </strong></span>
+                        <span class="hist-value"><strong><?= number_format($prev['remaining_balance'] ?? 0, 3) ?> &nbsp;&nbsp;(گرام) </strong></span>
                         <span class="hist-label"><strong>بقایا بیلنس:</strong></span>
                     </div>
                 </div>

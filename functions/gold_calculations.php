@@ -142,35 +142,46 @@ function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
 }
 
 /**
- * Get previous balance for a customer
+ * Get current/previous balance for a customer.
+ * Balance = Opening + Invoice Given + Invoice Multiple Given + Gold Gives - Invoice Receives - Gold Receipts - Wasooli
  */
 function getPreviousBalance(int $customerId, ?int $excludeInvoiceId = null): float {
     $db = getDB();
-    
-    // Get customer opening balance
+
     $stmt = $db->prepare("SELECT opening_balance FROM customers WHERE id = ?");
     $stmt->execute([$customerId]);
     $customer = $stmt->fetch();
-    
     if (!$customer) return 0;
-    
-    // Find last active invoice
-    $sql = "SELECT remaining_balance FROM invoices 
-            WHERE customer_id = ? AND status = 'active'";
+
+    $balance = (float) $customer['opening_balance'];
+
+    $sql = "SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoices WHERE customer_id = ? AND status = 'active'";
     $params = [$customerId];
-    
     if ($excludeInvoiceId) {
         $sql .= " AND id != ?";
         $params[] = $excludeInvoiceId;
     }
-    
-    $sql .= " ORDER BY invoice_date DESC, id DESC LIMIT 1";
-    
     $stmt = $db->prepare($sql);
     $stmt->execute($params);
-    $lastInvoice = $stmt->fetch();
-    
-    return $lastInvoice ? (float) $lastInvoice['remaining_balance'] : (float) $customer['opening_balance'];
+    $balance += (float) $stmt->fetchColumn();
+
+    $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
+    $stmt->execute([$customerId]);
+    $balance -= (float) $stmt->fetchColumn();
+
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
+        $stmt->execute([$customerId]);
+        $balance += (float) $stmt->fetchColumn();
+    }
+
+    if (function_exists('tableExists') && tableExists('invoice_multiple')) {
+        $stmt = $db->prepare("SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
+        $stmt->execute([$customerId]);
+        $balance += (float) $stmt->fetchColumn();
+    }
+
+    return round($balance, 3);
 }
 
 /**
@@ -178,36 +189,152 @@ function getPreviousBalance(int $customerId, ?int $excludeInvoiceId = null): flo
  */
 function recalculateChain(int $customerId, ?int $fromInvoiceId = null): void {
     $db = getDB();
-    
-    // Get customer opening balance
+
     $stmt = $db->prepare("SELECT opening_balance FROM customers WHERE id = ?");
     $stmt->execute([$customerId]);
     $customer = $stmt->fetch();
-    
     if (!$customer) return;
-    
-    // Get all active invoices ordered by date
-    $stmt = $db->prepare("SELECT id, effective_gold, wasooli, total_received_khalis, previous_balance, remaining_balance 
-                          FROM invoices WHERE customer_id = ? AND status = 'active' 
-                          ORDER BY invoice_date ASC, id ASC");
+
+    $transactions = [];
+
+    $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoices WHERE customer_id = ? AND status = 'active'");
     $stmt->execute([$customerId]);
-    $invoices = $stmt->fetchAll();
-    
-    $runningBalance = (float) $customer['opening_balance'];
-    
-    foreach ($invoices as $invoice) {
-        // Update previous balance
-        $updateStmt = $db->prepare("UPDATE invoices SET previous_balance = ?, remaining_balance = ? WHERE id = ?");
-        $newRemaining = round(
-            $runningBalance 
-            + (float) $invoice['effective_gold'] 
-            - (float) $invoice['wasooli'] 
-            - (float) $invoice['total_received_khalis'],
-            3
-        );
-        $updateStmt->execute([$runningBalance, $newRemaining, $invoice['id']]);
-        
-        $runningBalance = $newRemaining;
+    foreach ($stmt->fetchAll() as $row) {
+        $transactions[] = ['kind'=>'invoice','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+1,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
+    }
+
+    $stmt = $db->prepare("SELECT id, receipt_date AS txn_date, total_khalis_weight FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
+    $stmt->execute([$customerId]);
+    foreach ($stmt->fetchAll() as $row) {
+        $transactions[] = ['kind'=>'receipt','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+2,'net'=>-((float)$row['total_khalis_weight'])];
+    }
+
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $stmt = $db->prepare("SELECT id, give_date AS txn_date, total_khalis_weight FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
+        $stmt->execute([$customerId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $transactions[] = ['kind'=>'gold_give','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+3,'net'=>(float)$row['total_khalis_weight']];
+        }
+    }
+
+    if (function_exists('tableExists') && tableExists('invoice_multiple')) {
+        $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
+        $stmt->execute([$customerId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $transactions[] = ['kind'=>'invoice_multiple','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+4,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
+        }
+    }
+
+    usort($transactions, function($a, $b) {
+        $cmp = strcmp($a['date'], $b['date']);
+        return $cmp !== 0 ? $cmp : ($a['sort'] <=> $b['sort']);
+    });
+
+    $runningBalance = (float)$customer['opening_balance'];
+    foreach ($transactions as $txn) {
+        $previous = round($runningBalance, 3);
+        $runningBalance = round($runningBalance + (float)$txn['net'], 3);
+        if ($txn['kind'] === 'invoice') {
+            $db->prepare("UPDATE invoices SET previous_balance = ?, remaining_balance = ? WHERE id = ?")->execute([$previous, $runningBalance, $txn['id']]);
+        } elseif ($txn['kind'] === 'invoice_multiple' && function_exists('tableExists') && tableExists('invoice_multiple')) {
+            $db->prepare("UPDATE invoice_multiple SET previous_balance = ?, remaining_balance = ? WHERE id = ?")->execute([$previous, $runningBalance, $txn['id']]);
+        }
+    }
+}
+
+
+/**
+ * Recalculate and persist current gold inventory / stock.
+ * Stock = Opening + Received (gold receipts + invoice receives + multiple invoice receives)
+ *              - Given (single invoices + multiple invoices + standalone gold gives)
+ */
+function recalculateInventoryStock(): array {
+    $db = getDB();
+
+    $stmt = $db->query("SELECT * FROM inventory ORDER BY id DESC LIMIT 1");
+    $inventory = $stmt->fetch();
+    if (!$inventory) {
+        $db->query("INSERT INTO inventory (opening_balance, received, given_invoices, closing_balance, period_label) VALUES (0,0,0,0,'Current Stock')");
+        $stmt = $db->query("SELECT * FROM inventory ORDER BY id DESC LIMIT 1");
+        $inventory = $stmt->fetch();
+    }
+
+    $opening = (float)($inventory['opening_balance'] ?? 0);
+
+    $receiptKhalis = (float)$db->query("SELECT COALESCE(SUM(total_khalis_weight),0) FROM gold_receipts WHERE deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00'")->fetchColumn();
+
+    // Only count receive rows that belong to active single invoices.
+    $invoiceReceivedKhalis = (float)$db->query("SELECT COALESCE(SUM(ir.khalis_weight),0)
+        FROM invoice_receives ir
+        INNER JOIN invoices i ON i.id = ir.invoice_id
+        WHERE COALESCE(i.status,'active') = 'active'")->fetchColumn();
+
+    $multipleReceivedKhalis = 0.0;
+    try {
+        $multipleReceivedKhalis = (float)$db->query("SELECT COALESCE(SUM(imr.khalis_weight),0)
+            FROM invoice_multiple_receives imr
+            INNER JOIN invoice_multiple im ON im.id = imr.invoice_multiple_id
+            WHERE COALESCE(im.status,'active') = 'active'")->fetchColumn();
+    } catch (Throwable $e) { $multipleReceivedKhalis = 0.0; }
+
+    $invoiceGivenWeight = (float)$db->query("SELECT COALESCE(SUM(effective_gold),0) FROM invoices WHERE COALESCE(status,'active')='active'")->fetchColumn();
+
+    $multipleGivenWeight = 0.0;
+    try {
+        $multipleGivenWeight = (float)$db->query("SELECT COALESCE(SUM(effective_gold),0) FROM invoice_multiple WHERE COALESCE(status,'active')='active'")->fetchColumn();
+    } catch (Throwable $e) { $multipleGivenWeight = 0.0; }
+
+    $goldGiveWeight = 0.0;
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $goldGiveWeight = (float)$db->query("SELECT COALESCE(SUM(total_khalis_weight),0) FROM gold_gives WHERE deleted_at IS NULL")->fetchColumn();
+    }
+
+    $totalReceived = round($receiptKhalis + $invoiceReceivedKhalis + $multipleReceivedKhalis, 3);
+    $givenWeight = round($invoiceGivenWeight + $multipleGivenWeight + $goldGiveWeight, 3);
+    $closingBalance = round($opening + $totalReceived - $givenWeight, 3);
+
+    $upd = $db->prepare("UPDATE inventory SET received=?, given_invoices=?, closing_balance=?, updated_by=? WHERE id=?");
+    $upd->execute([$totalReceived, $givenWeight, $closingBalance, $_SESSION['user_id'] ?? null, $inventory['id']]);
+
+    return [
+        'inventory_id' => (int)$inventory['id'],
+        'opening_balance' => $opening,
+        'receipt_khalis' => round($receiptKhalis, 3),
+        'invoice_received_khalis' => round($invoiceReceivedKhalis, 3),
+        'multiple_received_khalis' => round($multipleReceivedKhalis, 3),
+        'total_received' => $totalReceived,
+        'invoice_given_weight' => round($invoiceGivenWeight, 3),
+        'multiple_given_weight' => round($multipleGivenWeight, 3),
+        'gold_give_weight' => round($goldGiveWeight, 3),
+        'given_weight' => $givenWeight,
+        'closing_balance' => $closingBalance,
+    ];
+}
+
+
+/**
+ * Ensure date columns exist for Multiple Invoice rows.
+ * Safe to call before create/edit/print; it only alters when missing.
+ */
+function ensureInvoiceMultipleDateColumns(): void {
+    $db = getDB();
+    try {
+        if (function_exists('tableExists') && tableExists('invoice_multiple_items')) {
+            $stmt = $db->query("SHOW COLUMNS FROM invoice_multiple_items LIKE 'item_date'");
+            if (!$stmt->fetch()) {
+                $db->exec("ALTER TABLE invoice_multiple_items ADD COLUMN item_date DATE NULL AFTER invoice_multiple_id");
+                $db->exec("UPDATE invoice_multiple_items imi INNER JOIN invoice_multiple im ON im.id = imi.invoice_multiple_id SET imi.item_date = im.invoice_date WHERE imi.item_date IS NULL");
+            }
+        }
+        if (function_exists('tableExists') && tableExists('invoice_multiple_receives')) {
+            $stmt = $db->query("SHOW COLUMNS FROM invoice_multiple_receives LIKE 'receive_date'");
+            if (!$stmt->fetch()) {
+                $db->exec("ALTER TABLE invoice_multiple_receives ADD COLUMN receive_date DATE NULL AFTER invoice_multiple_id");
+                $db->exec("UPDATE invoice_multiple_receives imr INNER JOIN invoice_multiple im ON im.id = imr.invoice_multiple_id SET imr.receive_date = im.invoice_date WHERE imr.receive_date IS NULL");
+            }
+        }
+    } catch (Throwable $e) {
+        // Keep page usable; migration SQL can be run manually if ALTER permission is unavailable.
     }
 }
 
@@ -231,6 +358,28 @@ function generateReceiptNo(): string {
     $row = $stmt->fetch();
     $number = ($row['max_id'] ?? 0) + 1;
     return 'RCV-' . str_pad($number, 5, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Generate standalone gold give number
+ */
+function generateGoldGiveNo(): string {
+    $db = getDB();
+    $stmt = $db->query("SELECT MAX(id) as max_id FROM gold_gives");
+    $row = $stmt->fetch();
+    $number = ($row['max_id'] ?? 0) + 1;
+    return 'GV-' . str_pad($number, 5, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Generate multiple invoice number
+ */
+function generateMultipleInvoiceNo(): string {
+    $db = getDB();
+    $stmt = $db->query("SELECT MAX(id) as max_id FROM invoice_multiple");
+    $row = $stmt->fetch();
+    $number = ($row['max_id'] ?? 0) + 1;
+    return 'MINV-' . str_pad($number, 5, '0', STR_PAD_LEFT);
 }
 
 /**

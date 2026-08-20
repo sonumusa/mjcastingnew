@@ -17,7 +17,7 @@ $perPage = 25;
 $offset = ($page - 1) * $perPage;
 
 // Build query
-$countSql = "SELECT COUNT(*) FROM invoices i WHERE 1=1";
+$countSql = "SELECT COUNT(*) FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE 1=1";
 $sql = "SELECT i.*, c.name as customer_name FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE 1=1";
 $params = [];
 
@@ -53,6 +53,7 @@ if ($status && in_array($status, ['active','cancelled'])) {
     $sql .= " AND i.status = ?";
     $params[] = $status;
 } else {
+    $countSql .= " AND i.status = 'active'";
     $sql .= " AND i.status = 'active'";
 }
 
@@ -61,6 +62,12 @@ $total->execute($params);
 $totalCount = $total->fetchColumn();
 $lastPage = max(1, ceil($totalCount / $perPage));
 $page = min($page, $lastPage);
+$offset = ($page - 1) * $perPage;
+
+$totalsSql = str_replace('SELECT i.*, c.name as customer_name', 'SELECT COALESCE(SUM(i.casting_weight),0) AS total_casting, COALESCE(SUM(i.effective_gold),0) AS total_effective, COALESCE(SUM(i.total_received_khalis),0) AS total_received, COALESCE(SUM(i.remaining_balance),0) AS total_balance', $sql);
+$totalsStmt = $db->prepare($totalsSql);
+$totalsStmt->execute($params);
+$listTotals = $totalsStmt->fetch() ?: ['total_casting'=>0,'total_effective'=>0,'total_received'=>0,'total_balance'=>0];
 
 $sql .= " ORDER BY i.invoice_date DESC, i.id DESC LIMIT $perPage OFFSET $offset";
 $stmt = $db->prepare($sql);
@@ -79,6 +86,9 @@ require_once __DIR__ . '/../includes/header.php';
         <p class="font-urdu" style="margin-top:4px;">بل</p>
     </div>
     <div class="page-actions">
+        <button type="button" class="btn btn-primary" onclick="submitBulkJpg()">
+            <i class="bi bi-image"></i> Export Selected JPG
+        </button>
         <a href="<?= url('invoices/create.php') ?>" class="btn btn-gold">
             <i class="bi bi-plus-circle"></i> New Invoice
         </a>
@@ -115,10 +125,12 @@ require_once __DIR__ . '/../includes/header.php';
     <a href="<?= url('invoices/index.php') ?>" class="btn btn-outline"><i class="bi bi-x-circle"></i></a>
 </form>
 
+<form method="POST" action="<?= url('invoices/bulk_print1_jpg.php') ?>" target="_blank" id="bulk-jpg-form">
 <div class="table-container">
     <table>
         <thead>
             <tr>
+                <th class="text-center"><input type="checkbox" id="select-all-invoices" onclick="toggleAllInvoices(this)"></th>
                 <th>Invoice #</th>
                 <th>Book #</th>
                 <th>Date</th>
@@ -134,10 +146,11 @@ require_once __DIR__ . '/../includes/header.php';
         </thead>
         <tbody>
             <?php if (empty($invoices)): ?>
-                <tr><td colspan="11" class="text-center text-muted">No invoices found</td></tr>
+                <tr><td colspan="12" class="text-center text-muted">No invoices found</td></tr>
             <?php else: ?>
                 <?php foreach ($invoices as $inv): ?>
                 <tr>
+                    <td class="text-center"><input type="checkbox" name="invoice_ids[]" value="<?= (int)$inv['id'] ?>" class="invoice-select"></td>
                     <td><a href="<?= url('invoices/show.php?id=' . $inv['id']) ?>" style="color:var(--gold-primary);text-decoration:none;font-weight:600;"><?= htmlspecialchars($inv['invoice_no']) ?></a></td>
                     <td><?= htmlspecialchars($inv['manual_book_no'] ?? '-') ?></td>
                     <td><?= formatDate($inv['invoice_date']) ?></td>
@@ -166,8 +179,19 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php endforeach; ?>
             <?php endif; ?>
         </tbody>
+        <tfoot>
+            <tr style="font-weight:700;background:var(--bg-surface);border-top:2px solid var(--gold-primary);">
+                <td colspan="6">Filtered Total (<?= number_format((float)$totalCount) ?> records)</td>
+                <td class="text-right mono"><?= number_format($listTotals['total_casting'], 3) ?></td>
+                <td class="text-right mono"><?= number_format($listTotals['total_effective'], 3) ?></td>
+                <td class="text-right mono"><?= number_format($listTotals['total_received'], 3) ?></td>
+                <td class="text-right mono"><?= number_format($listTotals['total_balance'], 3) ?></td>
+                <td colspan="2"></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
+</form>
 
 <?php
 if ($lastPage > 1):
@@ -185,6 +209,17 @@ if ($lastPage > 1):
 <?php endif; ?>
 
 <script>
+function toggleAllInvoices(source) {
+    document.querySelectorAll('.invoice-select').forEach(cb => cb.checked = source.checked);
+}
+function submitBulkJpg() {
+    const checked = document.querySelectorAll('.invoice-select:checked');
+    if (!checked.length) {
+        alert('Please select at least one invoice.');
+        return;
+    }
+    document.getElementById('bulk-jpg-form').submit();
+}
 function confirmDelete(invoiceNo) {
     return confirm('Are you sure you want to delete/cancel invoice ' + invoiceNo + '?\n\nThis action will:\n• Mark the invoice as cancelled\n• Recalculate customer balance\n\nThis cannot be undone easily.');
 }

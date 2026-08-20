@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $pageTitle ?? 'M.J Casting' ?> - Gold Workshop</title>
+    <script id="mj-theme-init">
+        (function(){
+            try {
+                var saved = localStorage.getItem('mj_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
+                window.toggleMjTheme = window.toggleMjTheme || function(){
+                    var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+                    document.documentElement.setAttribute('data-theme', next);
+                    try { localStorage.setItem('mj_theme', next); } catch(e) {}
+                };
+            } catch(e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+        })();
+    </script>
     
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -49,15 +62,25 @@
             </a>
             
             <div class="nav-section-label">Transactions</div>
-            <a href="<?= url('invoices/index.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'invoices') !== false ? 'active' : '' ?>">
+            <a href="<?= url('invoices/index.php') ?>" class="nav-item <?= (strpos($_SERVER['PHP_SELF'], 'invoices') !== false && strpos($_SERVER['PHP_SELF'], 'invoice-multiple') === false) ? 'active' : '' ?>">
                 <i class="bi bi-file-text"></i>
                 <span>Invoices</span>
                 <span class="font-urdu nav-urdu">بل</span>
+            </a>
+            <a href="<?= url('invoice-multiple/index.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'invoice-multiple') !== false ? 'active' : '' ?>">
+                <i class="bi bi-files"></i>
+                <span>Invoice Multiple</span>
+                <span class="font-urdu nav-urdu">ملٹی بل</span>
             </a>
             <a href="<?= url('gold-receipts/index.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'gold-receipts') !== false ? 'active' : '' ?>">
                 <i class="bi bi-inbox"></i>
                 <span>Gold Receipts</span>
                 <span class="font-urdu nav-urdu">سونا وصولی</span>
+            </a>
+            <a href="<?= url('gold-gives/index.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'gold-gives') !== false ? 'active' : '' ?>">
+                <i class="bi bi-box-arrow-up-right"></i>
+                <span>Gold Gives / Diya</span>
+                <span class="font-urdu nav-urdu">سونا دیا</span>
             </a>
             
             <div class="nav-section-label">Reports</div>
@@ -116,12 +139,16 @@
                 </div>
             </div>
             <div class="header-right">
+                <button type="button" class="theme-toggle" id="theme-toggle" onclick="window.toggleMjTheme && window.toggleMjTheme()" title="Toggle light / dark theme" aria-label="Toggle theme">
+                    <i class="bi bi-moon-stars" id="theme-toggle-icon"></i>
+                    <span id="theme-toggle-text">Dark</span>
+                </button>
                 <span class="header-user">
                     <i class="bi bi-person-circle"></i>
                     <?= htmlspecialchars($currentUser['name'] ?? 'User') ?>
                 </span>
-                <a href="<?= url('module_select.php') ?>" class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:5px 10px;color:var(--gold-primary);border-color:var(--gold-muted);">
-                    <i class="bi bi-arrow-left-right"></i> Switch Module
+                <a href="<?= url('wax/index.php') ?>" class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:5px 10px;color:var(--gold-primary);border-color:var(--gold-muted);">
+                    <i class="bi bi-arrow-left-right"></i> Wax Module
                 </a>
             </div>
         </header>

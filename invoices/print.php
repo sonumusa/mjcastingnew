@@ -179,10 +179,14 @@ $pageTitle = 'Print Invoice';
             font-weight: 700;
         }
     </style>
+<script>(function(){try{var t=localStorage.getItem('mj_theme')||'dark';document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){}})();</script>
+<style>html[data-theme="light"] .no-print{background:#f8fafc;color:#111827}html[data-theme="dark"] .no-print{background:#0b1120;color:#e8edf5}html[data-theme="dark"] .no-print a{color:#FFD700}</style>
 </head>
-<body onload="window.print()">
+<body>
     <div class="no-print" style="padding:16px;">
-        <button onclick="window.print()"><i class="bi bi-printer"></i> Print</button> | 
+        <button onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+        <button onclick="exportPdf()">Export PDF</button>
+        <button onclick="exportJpg()">Export JPG</button> <button type="button" id="print-theme-toggle" onclick="togglePrintTheme()">Theme</button> |
         <a href="<?= url('invoices/print.php?id=' . $id . '&format=a5') ?>" style="margin:0 4px;">A5 Format</a>
         <a href="<?= url('invoices/print.php?id=' . $id . '&format=slip') ?>" style="margin:0 4px;">Slip Format</a>
         <a href="<?= url('invoices/show.php?id=' . $id) ?>">Back</a>
@@ -362,5 +366,33 @@ $pageTitle = 'Print Invoice';
             <div style="margin-top:6px;font-size:7pt;color:#666;">Printed: <?= date('d-m-Y h:i A') ?> | Invoice ID: <?= htmlspecialchars($invoice['id']) ?></div>
         </div>
     </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const exportName = <?= json_encode($invoice['invoice_no']) ?>;
+async function captureInvoice() {
+    const el = document.querySelector('.print-container');
+    if (!window.html2canvas) { alert('Export library not loaded. Please check internet connection.'); throw new Error('html2canvas missing'); }
+    return await html2canvas(el, {scale: 3, backgroundColor: '#ffffff', useCORS: true});
+}
+async function exportJpg() {
+    const canvas = await captureInvoice();
+    const a = document.createElement('a');
+    a.download = exportName + '.jpg';
+    a.href = canvas.toDataURL('image/jpeg', 0.95);
+    a.click();
+}
+async function exportPdf() {
+    const canvas = await captureInvoice();
+    if (!window.jspdf) { alert('PDF library not loaded. Please check internet connection.'); return; }
+    const img = canvas.toDataURL('image/jpeg', 0.98);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', unit: 'pt', format: [canvas.width, canvas.height]});
+    pdf.addImage(img, 'JPEG', 0, 0, canvas.width, canvas.height);
+    pdf.save(exportName + '.pdf');
+}
+function togglePrintTheme(){var t=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('mj_theme',t)}catch(e){}}
+</script>
 </body>
 </html>

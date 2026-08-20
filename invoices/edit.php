@@ -151,7 +151,10 @@ $existingReceives = $stmt->fetchAll();
 $customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status = 'active' ORDER BY name")->fetchAll();
 
 // Clamp saved ratti to valid range for dropdown
-$savedRatti = (int) round($invoice['ratti']);
+//$savedRatti = (int) round($invoice['ratti']);
+//$savedRatti = max(6, min(24, $savedRatti));
+
+$savedRatti = round((float)$invoice['ratti'] * 2) / 2;
 $savedRatti = max(6, min(24, $savedRatti));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -282,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Recalculate balance chain
         recalculateChain($customerId);
+        recalculateInventoryStock();
 
         $db->commit();
 
@@ -393,11 +397,19 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="form-group">
                         <label>Ratti <span class="font-urdu">رتی</span></label>
-                        <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
+                        <!--<select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
                             <?php for ($i = 6; $i <= 24; $i++): ?>
                                 <option value="<?= $i ?>" <?= $i == $savedRatti ? 'selected' : '' ?>><?= $i ?></option>
                             <?php endfor; ?>
-                        </select>
+                        </select>-->
+                        <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
+    <?php for ($i = 6; $i <= 24; $i += 0.5): ?>
+        <?php $label = (floor($i) == $i) ? number_format($i, 0) : number_format($i, 1); ?>
+        <option value="<?= $label ?>" <?= abs($i - $savedRatti) < 0.001 ? 'selected' : '' ?>>
+            <?= $label ?>
+        </option>
+    <?php endfor; ?>
+</select>
                         <div class="formula-hint">Ratti impurity level (6 to 24)</div>
                     </div>
                     <div class="form-group">
@@ -622,13 +634,15 @@ function customRound2(val) {
 
 // Auto-set Ratti Rate based on Ratti value
 function updateRattiRate() {
-    const ratti = parseInt(document.getElementById('ratti').value);
+    //const ratti = parseInt(document.getElementById('ratti').value);
+
+    const ratti = parseFloat(document.getElementById('ratti').value) || 0;
     let rate = 0.100;
-    if (ratti >= 6 && ratti <= 15) {
+    if (ratti >= 6 && ratti <= 15.9) {
         rate = 0.100;
-    } else if (ratti === 16) {
+    } else if (ratti >= 16 && ratti <= 16.9) {
         rate = 0.110;
-    } else if (ratti === 17) {
+    } else if (ratti >= 17 && ratti <= 17.9) {
         rate = 0.120;
     } else if (ratti >= 18 && ratti <= 24) {
         rate = 0.150;

@@ -14,8 +14,8 @@ $page = max(1, (int) query('page', 1));
 $perPage = 25;
 $offset = ($page - 1) * $perPage;
 
-$countSql = "SELECT COUNT(*) FROM gold_receipts r WHERE 1=1";
-$sql = "SELECT r.*, c.name as customer_name FROM gold_receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE 1=1";
+$countSql = "SELECT COUNT(*) FROM gold_receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE r.deleted_at IS NULL";
+$sql = "SELECT r.*, c.name as customer_name FROM gold_receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE r.deleted_at IS NULL";
 $params = [];
 
 if ($search) {
@@ -50,6 +50,12 @@ $total->execute($params);
 $totalCount = $total->fetchColumn();
 $lastPage = max(1, ceil($totalCount / $perPage));
 $page = min($page, $lastPage);
+$offset = ($page - 1) * $perPage;
+
+$totalsSql = str_replace('SELECT r.*, c.name as customer_name', 'SELECT COALESCE(SUM(r.total_gross_weight),0) AS total_gross, COALESCE(SUM(r.total_khalis_weight),0) AS total_khalis', $sql);
+$totalsStmt = $db->prepare($totalsSql);
+$totalsStmt->execute($params);
+$listTotals = $totalsStmt->fetch() ?: ['total_gross'=>0,'total_khalis'=>0];
 
 $sql .= " ORDER BY r.receipt_date DESC, r.id DESC LIMIT $perPage OFFSET $offset";
 $stmt = $db->prepare($sql);
@@ -131,12 +137,21 @@ require_once __DIR__ . '/../includes/header.php';
                     <td class="text-center" style="white-space:nowrap;">
                         <a href="<?= url('gold-receipts/show.php?id=' . $r['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-eye"></i></a>
                         <a href="<?= url('gold-receipts/edit.php?id=' . $r['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-pencil"></i></a>
-                        <a href="<?= url('gold-receipts/print.php?id=' . $r['id']) ?>" class="btn btn-sm btn-outline"><i class="bi bi-printer"></i></a>
+                        <a href="<?= url('gold-receipts/print.php?id=' . $r['id']) ?>" class="btn btn-sm btn-outline" title="Print"><i class="bi bi-printer"></i></a>
+                        <a href="<?= url('gold-receipts/delete.php?id=' . $r['id']) ?>" class="btn btn-sm btn-danger" title="Delete" onclick="return confirm('Delete receipt <?= htmlspecialchars($r['receipt_no']) ?>?')"><i class="bi bi-trash"></i></a>
                     </td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
         </tbody>
+        <tfoot>
+            <tr style="font-weight:700;background:var(--bg-surface);border-top:2px solid var(--gold-primary);">
+                <td colspan="4">Filtered Total (<?= number_format((float)$totalCount) ?> records)</td>
+                <td class="text-right mono"><?= number_format($listTotals['total_gross'], 3) ?></td>
+                <td class="text-right mono" style="color:var(--success);"><?= number_format($listTotals['total_khalis'], 3) ?></td>
+                <td></td>
+            </tr>
+        </tfoot>
     </table>
 </div>
 

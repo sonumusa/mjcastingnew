@@ -12,7 +12,7 @@ if (!isLoggedIn()) {
     exit;
 }
 
-$id = (int) query('id', 0);
+$id = (int) (query('id', 0) ?: query('customer_id', 0));
 $excludeInvoiceId = (int) query('exclude', 0);
 if (!$id) {
     http_response_code(400);

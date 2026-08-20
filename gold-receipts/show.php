@@ -6,7 +6,7 @@ $pageTitle = 'Gold Receipt Details';
 $id = (int) query('id', 0);
 $db = getDB();
 
-$stmt = $db->prepare("SELECT r.*, c.name as customer_name, c.phone as customer_phone FROM gold_receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE r.id = ?");
+$stmt = $db->prepare("SELECT r.*, c.name as customer_name, c.phone as customer_phone FROM gold_receipts r LEFT JOIN customers c ON c.id = r.customer_id WHERE r.id = ? AND r.deleted_at IS NULL");
 $stmt->execute([$id]);
 $receipt = $stmt->fetch();
 

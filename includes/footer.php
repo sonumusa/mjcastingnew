@@ -3,6 +3,20 @@
     </div>
     
     <script>
+        function applyMjTheme(theme, persist = true) {
+            theme = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.classList.add('theme-transition');
+            document.documentElement.setAttribute('data-theme', theme);
+            if (persist) {
+                try { localStorage.setItem('mj_theme', theme); } catch(e) {}
+            }
+            const icon = document.getElementById('theme-toggle-icon');
+            const text = document.getElementById('theme-toggle-text');
+            if (icon) icon.className = theme === 'light' ? 'bi bi-sun' : 'bi bi-moon-stars';
+            if (text) text.textContent = theme === 'light' ? 'Light' : 'Dark';
+            window.setTimeout(() => document.documentElement.classList.remove('theme-transition'), 260);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const mobileToggle = document.getElementById('mobile-toggle');
             const sidebar = document.getElementById('sidebar');
@@ -33,6 +47,14 @@
             window.addEventListener('online', () => updateStatus('online'));
             window.addEventListener('offline', () => updateStatus('offline'));
             if (!navigator.onLine) updateStatus('offline');
+
+            let currentTheme = 'dark';
+            try { currentTheme = localStorage.getItem('mj_theme') || document.documentElement.getAttribute('data-theme') || 'dark'; } catch(e) {}
+            applyMjTheme(currentTheme, false);
+            window.toggleMjTheme = function() {
+                const active = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+                applyMjTheme(active, true);
+            };
         });
     </script>
     <?= $extraJs ?? '' ?>

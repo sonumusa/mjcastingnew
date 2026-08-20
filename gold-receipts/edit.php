@@ -45,6 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $db->prepare("UPDATE gold_receipts SET total_gross_weight=?, total_khalis_weight=? WHERE id=?")->execute([round($totalGross,3), round($totalKhalis,3), $id]);
         
+        recalculateChain($customerId);
+        if ((int)$receipt['customer_id'] !== $customerId) {
+            recalculateChain((int)$receipt['customer_id']);
+        }
+        recalculateInventoryStock();
         $db->commit();
         setFlash('success', "Receipt {$receipt['receipt_no']} updated successfully.");
         redirect('gold-receipts/show.php?id=' . $id);

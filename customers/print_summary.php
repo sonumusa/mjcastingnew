@@ -1,0 +1,25 @@
+<?php
+require_once __DIR__ . '/../config.php';
+requireAuth();
+require_once __DIR__ . '/../functions/ledger_functions.php';
+
+$db = getDB();
+$search = query('search', '');
+$partyType = query('party_type', '');
+$sql = "SELECT * FROM customers WHERE 1=1";
+$params = [];
+if ($search) { $sql .= " AND (name LIKE ? OR phone LIKE ?)"; $params[] = "%$search%"; $params[] = "%$search%"; }
+if ($partyType && in_array($partyType, ['customer','dukandar','karigar'])) { $sql .= " AND party_type = ?"; $params[] = $partyType; }
+$sql .= " ORDER BY name ASC";
+$stmt = $db->prepare($sql); $stmt->execute($params); $customers = $stmt->fetchAll();
+$totalOpening = 0; $totalBalance = 0;
+foreach ($customers as &$c) { $c['current_balance'] = getCustomerCurrentBalance((int)$c['id']); $totalOpening += (float)$c['opening_balance']; $totalBalance += (float)$c['current_balance']; }
+unset($c);
+?>
+<!DOCTYPE html><html><head><meta charset="UTF-8"><script>(function(){try{var t=localStorage.getItem('mj_theme')||'dark';document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark')}catch(e){}})();</script><title>Customer Summary Report</title><style>body{font-family:Arial,sans-serif;color:#111;background:#fff}.wrap{max-width:1100px;margin:20px auto;padding:20px}.no-print{text-align:center;margin:10px}.head{display:flex;justify-content:space-between;border-bottom:2px solid #333;padding-bottom:12px;margin-bottom:16px}.title{font-size:24px;font-weight:700}.muted{color:#555;font-size:13px}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.summary>div{border:1px solid #777;padding:10px;background:#fafafa}table{width:100%;border-collapse:collapse}th,td{border:1px solid #777;padding:7px;font-size:12px}th{background:#f1f1f1}.right{text-align:right}.center{text-align:center}.total{font-weight:700;background:#fafafa}html[data-theme="light"] .no-print{background:#f8fafc;color:#111827}html[data-theme="dark"] .no-print{background:#0b1120;color:#e8edf5}html[data-theme="dark"] .no-print a{color:#FFD700}@media print{.no-print{display:none}.wrap{margin:0;max-width:none}}</style></head><body>
+<div class="no-print"><button onclick="window.print()">Print</button> <button onclick="exportPdf()">Export PDF</button> <button onclick="exportJpg()">Export JPG</button> <button type="button" id="print-theme-toggle" onclick="togglePrintTheme()">Theme</button> <a href="<?= url('customers/index.php') ?>">Back</a></div>
+<div class="wrap"><div class="head"><div><div class="title">M.J Casting</div><div class="muted">Customer Summary Report</div></div><div style="text-align:right"><?= date('d/m/Y h:i A') ?><br><?= htmlspecialchars($partyType ? ucfirst($partyType) : 'All Parties') ?></div></div>
+<div class="summary"><div>Total Parties<br><strong><?= count($customers) ?></strong></div><div>Total Opening<br><strong><?= number_format($totalOpening,3) ?> g</strong></div><div>Total Current Balance<br><strong><?= number_format($totalBalance,3) ?> g</strong></div></div>
+<table><thead><tr><th>#</th><th>Name</th><th>Phone</th><th>CNIC</th><th>City</th><th>Address</th><th>Type</th><th>Status</th><th class="right">Opening (g)</th><th class="right">Current Balance (g)</th></tr></thead><tbody><?php foreach($customers as $i=>$c): ?><tr><td class="center"><?= $i+1 ?></td><td><?= htmlspecialchars($c['name']) ?></td><td><?= htmlspecialchars($c['phone'] ?: '-') ?></td><td><?= htmlspecialchars($c['cnic'] ?: '-') ?></td><td><?= htmlspecialchars($c['city'] ?: '-') ?></td><td><?= htmlspecialchars($c['address'] ?: '-') ?></td><td><?= ucfirst($c['party_type']) ?></td><td><?= ucfirst($c['status']) ?></td><td class="right"><?= number_format($c['opening_balance'],3) ?></td><td class="right"><?= number_format($c['current_balance'],3) ?></td></tr><?php endforeach; ?></tbody><tfoot><tr class="total"><td colspan="8">Total</td><td class="right"><?= number_format($totalOpening,3) ?></td><td class="right"><?= number_format($totalBalance,3) ?></td></tr></tfoot></table></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script>const exportName='customer-summary';async function cap(){const el=document.querySelector('.wrap');if(!window.html2canvas){alert('Export library not loaded.');throw new Error('missing');}return await html2canvas(el,{scale:2,backgroundColor:'#fff',useCORS:true});}async function exportJpg(){const c=await cap(),a=document.createElement('a');a.download=exportName+'.jpg';a.href=c.toDataURL('image/jpeg',.95);a.click();}async function exportPdf(){const c=await cap();if(!window.jspdf){alert('PDF library not loaded.');return;}const {jsPDF}=window.jspdf,pdf=new jsPDF({orientation:'landscape',unit:'pt',format:[c.width,c.height]});pdf.addImage(c.toDataURL('image/jpeg',.98),'JPEG',0,0,c.width,c.height);pdf.save(exportName+'.pdf');}function togglePrintTheme(){var t=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('mj_theme',t)}catch(e){}}</script>
+</body></html>

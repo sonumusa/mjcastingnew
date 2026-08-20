@@ -52,9 +52,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $db->prepare("UPDATE gold_receipts SET total_gross_weight = ?, total_khalis_weight = ? WHERE id = ?");
         $stmt->execute([round($totalGross, 3), round($totalKhalis, 3), $receiptId]);
         
+        recalculateChain($customerId);
+        recalculateInventoryStock();
         $db->commit();
         
         setFlash('success', "Receipt $receiptNo created successfully.");
+        if (post('action') === 'save_new') {
+            redirect('gold-receipts/create.php');
+        }
         redirect('gold-receipts/show.php?id=' . $receiptId);
         
     } catch (Exception $e) {
@@ -112,7 +117,8 @@ require_once __DIR__ . '/../includes/header.php';
         <button type="button" class="btn-add-row" onclick="addItem()"><i class="bi bi-plus-lg"></i> Add Item</button>
 
         <div style="display:flex;gap:10px;margin-top:24px;">
-            <button type="submit" class="btn btn-gold"><i class="bi bi-save"></i> Save Receipt</button>
+            <button type="submit" class="btn btn-gold" name="action" value="save"><i class="bi bi-save"></i> Save Receipt</button>
+            <button type="submit" class="btn btn-primary" name="action" value="save_new"><i class="bi bi-plus-circle"></i> Save & New</button>
             <a href="<?= url('gold-receipts/index.php') ?>" class="btn btn-outline"><i class="bi bi-x"></i> Cancel</a>
         </div>
     </form>

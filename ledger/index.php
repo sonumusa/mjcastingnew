@@ -105,27 +105,58 @@ require_once __DIR__ . '/../includes/header.php';
             </tr>
         </thead>
         <tbody>
+            <?php
+                $totalLedgerGiven = 0; $totalLedgerReceived = 0; $totalLedgerNet = 0;
+                foreach ($ledgerData['transactions'] as $t) {
+                    if (in_array($t['type'], ['invoice','invoice_multiple','gold_give'])) $totalLedgerGiven += (float)($t['effective_gold'] ?? 0);
+                    if (in_array($t['type'], ['invoice','invoice_multiple'])) $totalLedgerReceived += (float)($t['received_khalis'] ?? 0);
+                    if ($t['type'] === 'receipt') $totalLedgerReceived += (float)($t['khalis_weight'] ?? 0);
+                    $totalLedgerNet += (float)($t['net_amount'] ?? 0);
+                }
+            ?>
             <tr style="font-weight:600;background:var(--bg-surface);">
                 <td colspan="6">Opening Balance</td>
                 <td class="text-right mono"><?= number_format($ledgerData['opening_balance'], 3) ?></td>
             </tr>
             <?php foreach ($ledgerData['transactions'] as $txn): ?>
+            <?php
+                $typeLabel = [
+                    'invoice' => 'Invoice',
+                    'invoice_multiple' => 'Invoice Multiple',
+                    'receipt' => 'Receipt',
+                    'gold_give' => 'Gold Give',
+                ][$txn['type']] ?? ucfirst($txn['type']);
+                $badgeClass = in_array($txn['type'], ['invoice','invoice_multiple','gold_give']) ? 'bg-gold' : 'bg-info';
+                $givenDisplay = in_array($txn['type'], ['invoice','invoice_multiple','gold_give']) ? number_format($txn['effective_gold'], 3) : '-';
+                $receivedDisplay = in_array($txn['type'], ['invoice','invoice_multiple']) ? number_format($txn['received_khalis'], 3) : ($txn['type'] === 'receipt' ? number_format($txn['khalis_weight'], 3) : '-');
+            ?>
             <tr>
                 <td><?= formatDate($txn['date']) ?></td>
-                <td><span class="badge <?= $txn['type'] === 'invoice' ? 'bg-gold' : 'bg-info' ?>"><?= ucfirst($txn['type']) ?></span></td>
+                <td><span class="badge <?= $badgeClass ?>"><?= htmlspecialchars($typeLabel) ?></span></td>
                 <td>
                     <?php if ($txn['type'] === 'invoice'): ?>
                         <a href="<?= url('invoices/show.php?id=' . $txn['data']['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($txn['invoice_no']) ?></a>
+                    <?php elseif ($txn['type'] === 'invoice_multiple'): ?>
+                        <a href="<?= url('invoice-multiple/show.php?id=' . $txn['data']['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($txn['invoice_no']) ?></a>
+                    <?php elseif ($txn['type'] === 'gold_give'): ?>
+                        <a href="<?= url('gold-gives/show.php?id=' . $txn['data']['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($txn['give_no']) ?></a>
                     <?php else: ?>
                         <a href="<?= url('gold-receipts/show.php?id=' . $txn['data']['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($txn['receipt_no']) ?></a>
                     <?php endif; ?>
                 </td>
-                <td class="text-right mono"><?= $txn['type'] === 'invoice' ? number_format($txn['effective_gold'], 3) : '-' ?></td>
-                <td class="text-right mono"><?= $txn['type'] === 'invoice' ? number_format($txn['received_khalis'], 3) : number_format($txn['khalis_weight'], 3) ?></td>
+                <td class="text-right mono"><?= $givenDisplay ?></td>
+                <td class="text-right mono"><?= $receivedDisplay ?></td>
                 <td class="text-right mono <?= $txn['net_amount'] < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($txn['net_amount'], 3) ?></td>
                 <td class="text-right mono"><?= number_format($txn['running_balance_after'], 3) ?></td>
             </tr>
             <?php endforeach; ?>
+            <tr style="font-weight:700;background:var(--bg-surface);border-top:2px solid var(--gold-primary);">
+                <td colspan="3">Total</td>
+                <td class="text-right mono"><?= number_format($totalLedgerGiven, 3) ?></td>
+                <td class="text-right mono"><?= number_format($totalLedgerReceived, 3) ?></td>
+                <td class="text-right mono <?= $totalLedgerNet < 0 ? 'text-danger' : 'text-success' ?>"><?= number_format($totalLedgerNet, 3) ?></td>
+                <td class="text-right mono">—</td>
+            </tr>
         </tbody>
     </table>
 </div>

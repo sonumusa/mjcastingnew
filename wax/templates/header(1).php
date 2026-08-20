@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $page_title ?? 'Wax & Design' ?> - M.J Casting</title>
+    <script id="wax-theme-init">
+        (function(){
+            try {
+                var saved = localStorage.getItem('mj_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
+            } catch(e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+        })();
+    </script>
     <link rel="stylesheet" href="<?= $base_url ?>/assets/css/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -166,7 +174,7 @@
     <?php
     // Define base URL from config if not set
     if (!isset($base_url)) {
-        $base_url = '/mj_casting_wax';
+        $base_url = rtrim(getBaseUrl(), '/');
     }
     ?>
 </head>
@@ -188,7 +196,7 @@
             <a href="expenses.php"><i class="bi bi-receipt"></i> Expenses</a>
             <a href="reports.php"><i class="bi bi-file-bar-graph"></i> Reports</a>
             <a href="price_list.php"><i class="bi bi-list-ol"></i> Price List</a>
-            <a href="<?= $base_url ?>/module_select.php"><i class="bi bi-arrow-left-right"></i> Switch</a>
+            <a href="<?= $base_url ?>/dashboard.php"><i class="bi bi-arrow-left-right"></i> Casting</a>
             <a href="<?= $base_url ?>/logout.php"><i class="bi bi-box-arrow-left"></i> Logout</a>
         </div>
     </nav>

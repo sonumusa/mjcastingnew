@@ -265,6 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Recalculate balance chain
         recalculateChain($customerId);
+        recalculateInventoryStock();
 
         $db->commit();
 
@@ -275,6 +276,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (post('action') === 'print_receipt') {
             redirect('invoices/print1.php?id=' . $invoiceId);
+        }
+        if (post('action') === 'save_new') {
+            redirect('invoices/create.php');
         }
         redirect('invoices/show.php?id=' . $invoiceId);
 
@@ -369,11 +373,19 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="form-group">
                         <label>Ratti <span class="font-urdu">رتی</span></label>
-                        <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
-                            <?php for ($i = 6; $i <= 24; $i++): ?>
+                       <!-- <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
+                            <?php for ($i = 6; $i <= 24; $i += 0.5): ?>
                                 <option value="<?= $i ?>" <?= $i == 11 ? 'selected' : '' ?>><?= $i ?></option>
                             <?php endfor; ?>
-                        </select>
+                        </select>-->
+                        <select name="ratti" id="ratti" class="form-control" required onchange="updateRattiRate(); calculateLive();">
+    <?php for ($i = 6; $i <= 24; $i += 0.5): ?>
+        <?php $label = (floor($i) == $i) ? number_format($i, 0) : number_format($i, 1); ?>
+        <option value="<?= $label ?>" <?= abs($i - 11) < 0.001 ? 'selected' : '' ?>>
+            <?= $label ?>
+        </option>
+    <?php endfor; ?>
+</select>
                         <div class="formula-hint">Ratti impurity level (6 to 24)</div>
                     </div>
                     <div class="form-group">
@@ -464,7 +476,8 @@ require_once __DIR__ . '/../includes/header.php';
 
             <!-- Submit Buttons -->
             <div style="display:flex;gap:12px;padding:24px 0;">
-                <button type="submit" class="btn btn-gold" style="flex:1;"><i class="bi bi-save"></i> Save Invoice</button>
+                <button type="submit" name="action" value="save" class="btn btn-gold" style="flex:1;"><i class="bi bi-save"></i> Save Invoice</button>
+                <button type="submit" name="action" value="save_new" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Save & New</button>
                 <button type="submit" name="action" value="print" class="btn btn-primary"><i class="bi bi-printer"></i> Save & Print</button>
                 <button type="submit" name="action" value="print_receipt" class="btn btn-secondary"><i class="bi bi-receipt"></i> Save & Receipt</button>
                 <a href="<?= url('invoices/index.php') ?>" class="btn btn-outline"><i class="bi bi-x"></i> Cancel</a>
@@ -490,7 +503,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <label>Waste Weight Adj.</label>
                         <div class="adj-input-group">
                             <button type="button" class="adj-btn" onclick="adjustValue('waste-adjustment', -0.01)">−</button>
-                            <input type="number" id="waste-adjustment" class="adj-input" step="0.001" value="0.000" oninput="calculateLive()">
+                            <input type="number" id="waste-adjustment" class="adj-input" step="0.01" value="0.000" oninput="calculateLive()">
                             <button type="button" class="adj-btn" onclick="adjustValue('waste-adjustment', 0.01)">+</button>
                         </div>
                     </div>
@@ -498,7 +511,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <label>Male Waste Adj.</label>
                         <div class="adj-input-group">
                             <button type="button" class="adj-btn" onclick="adjustValue('male-waste-adjustment', -0.01)">−</button>
-                            <input type="number" id="male-waste-adjustment" class="adj-input" step="0.001" value="0.000" oninput="calculateLive()">
+                            <input type="number" id="male-waste-adjustment" class="adj-input" step="0.01" value="0.000" oninput="calculateLive()">
                             <button type="button" class="adj-btn" onclick="adjustValue('male-waste-adjustment', 0.01)">+</button>
                         </div>
                     </div>
@@ -598,13 +611,14 @@ function customRound2(val) {
 
 // Auto-set Ratti Rate based on Ratti value
 function updateRattiRate() {
-    const ratti = parseInt(document.getElementById('ratti').value);
+    //const ratti = parseInt(document.getElementById('ratti').value);
+    const ratti = parseFloat(document.getElementById('ratti').value) || 0;
     let rate = 0.100;
-    if (ratti >= 6 && ratti <= 15) {
+    if (ratti >= 6 && ratti <= 15.9) {
         rate = 0.100;
-    } else if (ratti === 16) {
+    } else if (ratti >= 16 && ratti <= 16.9) {
         rate = 0.110;
-    } else if (ratti === 17) {
+    } else if (ratti >= 17 && ratti <= 17.9) {
         rate = 0.120;
     } else if (ratti >= 18 && ratti <= 24) {
         rate = 0.150;

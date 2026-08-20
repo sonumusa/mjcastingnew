@@ -58,6 +58,7 @@ require_once __DIR__ . '/../includes/header.php';
         <p class="font-urdu" style="margin-top:4px;">گاہک / پارٹیاں</p>
     </div>
     <div class="page-actions">
+        <a href="<?= url('customers/print_summary.php?' . http_build_query($_GET)) ?>" class="btn btn-primary" target="_blank"><i class="bi bi-printer"></i> Print Summary</a>
         <a href="<?= url('customers/create.php') ?>" class="btn btn-gold">
             <i class="bi bi-plus-circle"></i> New Party
         </a>

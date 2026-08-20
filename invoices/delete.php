@@ -21,6 +21,7 @@ if (!$invoice) {
         $stmt->execute([$id]);
         
         recalculateChain($customerId);
+        recalculateInventoryStock();
         
         $db->commit();
         setFlash('success', "Invoice {$invoice['invoice_no']} cancelled successfully.");

@@ -188,7 +188,7 @@ $qty_sub       = $is_wax ? 'Total wax quantity (grams)' : 'Total design pieces';
 $amount_label  = $is_wax ? 'Total Wax Amount' : 'Total Design Amount';
 $detail_title  = $is_wax ? 'Wax Items Detail — Entry Order' : 'Design Items Detail — Entry Order';
 
-include __DIR__ . '/../templates/header.php';
+include __DIR__ . '/templates/header.php';
 ?>
 
 <style>

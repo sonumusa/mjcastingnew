@@ -57,12 +57,12 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-file-text"></i></div>
         <div class="stat-label">Invoices</div>
-        <div class="stat-value"><?= $report['total_invoices'] ?></div>
+        <div class="stat-value"><?= $report['total_invoices'] + ($report['total_multiple_invoices'] ?? 0) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-inbox"></i></div>
-        <div class="stat-label">Receipts</div>
-        <div class="stat-value"><?= $report['total_receipts'] ?></div>
+        <div class="stat-label">Receipts / Gives</div>
+        <div class="stat-value"><?= $report['total_receipts'] ?> / <?= $report['total_gold_gives'] ?? 0 ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-gem"></i></div>
@@ -71,12 +71,12 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-check-circle"></i></div>
-        <div class="stat-label">Grand Total (Effective)</div>
+        <div class="stat-label">Total Given (All)</div>
         <div class="stat-value"><?= number_format($report['total_grand_total'], 3) ?> g</div>
     </div>
     <div class="stat-card">
         <div class="stat-icon"><i class="bi bi-box-arrow-in-down"></i></div>
-        <div class="stat-label">Received (Invoice)</div>
+        <div class="stat-label">Received (Invoice/Multi)</div>
         <div class="stat-value"><?= number_format($report['total_received_invoice'], 3) ?> g</div>
     </div>
     <div class="stat-card">
@@ -167,6 +167,29 @@ require_once __DIR__ . '/../includes/header.php';
                 </tbody>
             </table>
         </div>
+    </div>
+    <!-- Invoice Multiple -->
+    <div class="card" style="padding:24px;">
+        <h3 style="font-family:'Playfair Display',serif;margin-bottom:16px;color:var(--gold-primary);">
+            <i class="bi bi-files"></i> Invoice Multiple (<?= $report['total_multiple_invoices'] ?? 0 ?>)
+        </h3>
+        <div class="table-container"><table><thead><tr><th>Invoice #</th><th>Party</th><th class="text-right">Casting</th><th class="text-right">Effective</th><th class="text-right">Received</th></tr></thead><tbody>
+        <?php if (empty($report['multiple_invoices'])): ?><tr><td colspan="5" class="text-center text-muted">No multiple invoices</td></tr><?php else: foreach ($report['multiple_invoices'] as $mi): ?>
+            <tr><td><a href="<?= url('invoice-multiple/show.php?id=' . $mi['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($mi['invoice_no']) ?></a></td><td><?= htmlspecialchars($mi['customer_name'] ?? '') ?></td><td class="text-right mono"><?= number_format($mi['total_casting_weight'],3) ?></td><td class="text-right mono"><?= number_format($mi['effective_gold'],3) ?></td><td class="text-right mono"><?= number_format($mi['total_received_khalis'],3) ?></td></tr>
+        <?php endforeach; endif; ?>
+        </tbody></table></div>
+    </div>
+
+    <!-- Gold Gives -->
+    <div class="card" style="padding:24px;">
+        <h3 style="font-family:'Playfair Display',serif;margin-bottom:16px;color:var(--gold-primary);">
+            <i class="bi bi-box-arrow-up-right"></i> Gold Gives (<?= $report['total_gold_gives'] ?? 0 ?>)
+        </h3>
+        <div class="table-container"><table><thead><tr><th>Give #</th><th>Party</th><th class="text-right">Gross</th><th class="text-right">Khalis Given</th></tr></thead><tbody>
+        <?php if (empty($report['gold_gives'])): ?><tr><td colspan="4" class="text-center text-muted">No gold gives</td></tr><?php else: foreach ($report['gold_gives'] as $g): ?>
+            <tr><td><a href="<?= url('gold-gives/show.php?id=' . $g['id']) ?>" style="color:var(--gold-primary);"><?= htmlspecialchars($g['give_no']) ?></a></td><td><?= htmlspecialchars($g['customer_name'] ?? '') ?></td><td class="text-right mono"><?= number_format($g['total_gross_weight'],3) ?></td><td class="text-right mono text-danger"><?= number_format($g['total_khalis_weight'],3) ?></td></tr>
+        <?php endforeach; endif; ?>
+        </tbody></table></div>
     </div>
 </div>
 <?php endif; ?>

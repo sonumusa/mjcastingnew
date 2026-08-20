@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 requireAuth();
+require_once __DIR__ . '/../functions/gold_calculations.php';
 
 $id = (int) query('id', 0);
 $db = getDB();
@@ -13,6 +14,8 @@ if (!$receipt) {
     setFlash('error', 'Receipt not found.');
 } else {
     $db->prepare("UPDATE gold_receipts SET deleted_at = NOW() WHERE id = ?")->execute([$id]);
+    recalculateChain((int)$receipt['customer_id']);
+    recalculateInventoryStock();
     setFlash('success', 'Receipt deleted successfully.');
 }
 
