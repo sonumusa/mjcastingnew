@@ -14,11 +14,11 @@ $pdo = getDB();
 // CONFIGURATION: Faisal Wax Rates
 // ==========================================
 $faisal_worker_name = 'fahad';
-$default_wax_rate = 700;
+$default_wax_rate = 750;
 
 $special_rate_customers = [
-    'Mohsin Wax' => 700,
-    'Waseem Bhai' => 700,
+    'Mohsin Wax' => 750,
+    'Waseem Bhai' => 750,
 ];
 
 $stmtFaisal = $pdo->prepare("SELECT id FROM wax_workers WHERE name LIKE ? AND active = 1 LIMIT 1");
@@ -48,8 +48,8 @@ function match_special_customer($customer_name, $special_rate_customers) {
 // Calculate Faisal's Wax Summary
 // ==========================================
 $faisal_wax_summary = [
-    'Mohsin Wax' => ['qty' => 0, 'rate' => 700, 'amount' => 0],
-    'Waseem Bhai' => ['qty' => 0, 'rate' => 700, 'amount' => 0],
+    'Mohsin Wax' => ['qty' => 0, 'rate' => 750, 'amount' => 0],
+    'Waseem Bhai' => ['qty' => 0, 'rate' => 750, 'amount' => 0],
 ];
 $faisal_other_customers = [];
 $faisal_other_total_qty = 0;
@@ -875,19 +875,19 @@ foreach ($workers as $worker):
                 <tr class="special-row">
                     <td class="left bold">Mohsin Wax</td>
                     <td><?= number_format($faisal_wax_summary['Mohsin Wax']['qty'], 3) ?></td>
-                    <td>700</td>
+                    <td>750</td>
                     <td class="right bold"><?= format_currency($faisal_wax_summary['Mohsin Wax']['amount']) ?></td>
                 </tr>
                 <tr class="special-row">
                     <td class="left bold">Waseem Bhai</td>
                     <td><?= number_format($faisal_wax_summary['Waseem Bhai']['qty'], 3) ?></td>
-                    <td>700</td>
+                    <td>750</td>
                     <td class="right bold"><?= format_currency($faisal_wax_summary['Waseem Bhai']['amount']) ?></td>
                 </tr>
                 <tr class="other-row">
                     <td class="left bold">Other Customers (دیگر)</td>
                     <td><?= number_format($faisal_other_total_qty, 3) ?></td>
-                    <td>700</td>
+                    <td>750</td>
                     <td class="right bold"><?= format_currency($faisal_other_amount) ?></td>
                 </tr>
                 <tr class="total-row">

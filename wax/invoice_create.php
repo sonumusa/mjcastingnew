@@ -1,22 +1,24 @@
 <?php
-require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
 
 require_login();
 
 $page_title = "New Invoice";
 $pdo = getDB();
 
-$customers = $pdo->query("SELECT id, name FROM wax_customers WHERE active = 1 ORDER BY name ASC")->fetchAll();
-$workers = $pdo->query("SELECT id, name FROM wax_workers WHERE active = 1 ORDER BY name ASC")->fetchAll();
-$items = $pdo->query("SELECT id, name, name_urdu, category, default_rate FROM wax_items WHERE active = 1 ORDER BY name_urdu ASC")->fetchAll();
+$customers = $pdo->query("SELECT id, name FROM customers WHERE active = 1 ORDER BY name ASC")->fetchAll();
+$workers = $pdo->query("SELECT id, name FROM workers WHERE active = 1 ORDER BY name ASC")->fetchAll();
+$items = $pdo->query("SELECT id, name, name_urdu, category, default_rate FROM items WHERE active = 1 ORDER BY name_urdu ASC")->fetchAll();
 
-$price_list_raw = $pdo->query("SELECT customer_id, item_id, rate FROM wax_price_list")->fetchAll();
+$price_list_raw = $pdo->query("SELECT customer_id, item_id, rate FROM price_list")->fetchAll();
 $price_list = [];
 foreach ($price_list_raw as $row) {
     $price_list[$row['customer_id'] . '_' . $row['item_id']] = $row['rate'];
 }
 
-include __DIR__ . '/templates/header.php';
+include __DIR__ . '/../templates/header.php';
 ?>
 
 <style>

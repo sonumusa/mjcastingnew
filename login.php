@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <button class="button" type="submit">Log in</button>
             </form>
-            <p class="hint">Admin: admin@goldworkshop.test / admin123<br>User: user@goldworkshop.test / user12345</p>
+            <!--<p class="hint">Admin: admin@goldworkshop.test / admin123<br>User: user@goldworkshop.test / user12345</p>-->
         </div>
     </div>
 

@@ -35,7 +35,7 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
     <div class="page-actions">
         <a href="<?= url('invoices/edit.php?id=' . $id) ?>" class="btn btn-primary"><i class="bi bi-pencil"></i> Edit</a>
-        <a href="<?= url('invoices/print.php?id=' . $id) ?>" class="btn btn-success"><i class="bi bi-printer"></i> Print</a>
+        <a href="<?= url('invoices/print1.php?id=' . $id) ?>" class="btn btn-success"><i class="bi bi-printer"></i> Print</a>
         <?php if ($invoice['status'] === 'active'): ?>
             <a href="<?= url('invoices/delete.php?id=' . $id) ?>" 
                class="btn btn-danger" 

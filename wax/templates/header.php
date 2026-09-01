@@ -4,14 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $page_title ?? 'Wax & Design' ?> - M.J Casting</title>
-    <script id="wax-theme-init">
-        (function(){
-            try {
-                var saved = localStorage.getItem('mj_theme') || 'dark';
-                document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
-            } catch(e) { document.documentElement.setAttribute('data-theme', 'dark'); }
-        })();
-    </script>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -19,7 +11,7 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-    <?php if (!isset($base_url)) { $base_url = '/mjcasting'; } ?>
+    <?php if (!isset($base_url)) { $base_url = '/mj_casting_wax'; } ?>
 
     <style>
         *, *::before, *::after {
@@ -42,34 +34,6 @@
             --text-muted:     #5a6d8a;
             --shadow:         0 2px 8px rgba(0,0,0,0.3);
         }
-
-        html { color-scheme: dark; }
-        html[data-theme="light"] { color-scheme: light; }
-        html[data-theme="light"] {
-            --primary:        #0284c7;
-            --primary-dark:   #0369a1;
-            --success:        #059669;
-            --danger:         #dc2626;
-            --warning:        #d97706;
-            --border:         #d9e2ec;
-            --bg-card:        #ffffff;
-            --bg-body:        #f5f7fb;
-            --text-primary:   #111827;
-            --text-secondary: #4b5563;
-            --text-muted:     #6b7280;
-            --shadow:         0 2px 10px rgba(15,23,42,0.08);
-        }
-        html.theme-transition *, html.theme-transition *::before, html.theme-transition *::after { transition: background-color .2s ease, color .2s ease, border-color .2s ease, box-shadow .2s ease !important; }
-        .theme-toggle { display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;font-size:.78rem;font-weight:700; }
-        .theme-toggle:hover { color:var(--primary);border-color:var(--primary); }
-        html[data-theme="light"] .navbar { background: rgba(255,255,255,.96) !important; box-shadow: 0 2px 12px rgba(15,23,42,.08); }
-        html[data-theme="light"] th { background:#f1f5f9 !important; color:var(--text-secondary); }
-        html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme="light"] textarea { background:#fff;color:#111827;border-color:var(--border); }
-        html[data-theme="light"] .select2-container--default .select2-selection--single,
-        html[data-theme="light"] .select2-dropdown,
-        html[data-theme="light"] .select2-results__option { background:#fff;color:#111827;border-color:var(--border); }
-        html[data-theme="light"] .btn-secondary { background:#fff;color:var(--text-secondary); }
-        @media print { html, body { background:#fff !important;color:#000 !important; } .theme-toggle { display:none !important; } }
 
         /* ══════════════════════════════════════════
            BASE
@@ -103,7 +67,7 @@
             gap: 8px;
 
             /* looks */
-            background: linear-gradient(135deg, var(--bg-card) 0%, #1a2744 100%);
+            background: linear-gradient(135deg, #0d1528 0%, #1a2744 100%);
             padding: 10px 24px;
             border-bottom: 1px solid var(--border);
             box-shadow: 0 2px 12px rgba(0,0,0,0.4);
@@ -494,9 +458,6 @@
         <a href="price_list.php"     class="<?= nav_active('price_list.php',     $current) ?>">
             <i class="bi bi-list-ol"></i> Price List
         </a>
-        <button type="button" class="theme-toggle" id="wax-theme-toggle" title="Toggle light / dark theme">
-            <i class="bi bi-moon-stars" id="wax-theme-toggle-icon"></i><span id="wax-theme-toggle-text">Dark</span>
-        </button>
         <a href="<?= $base_url ?>/module_select.php">
             <i class="bi bi-arrow-left-right"></i> Switch
         </a>

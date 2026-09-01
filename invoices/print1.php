@@ -1,13 +1,9 @@
 <?php
-
 require_once __DIR__ . '/../config.php';
-
 requireAuth();
-
 require_once __DIR__ . '/../functions/gold_calculations.php';
 
 $id = (int) query('id', 0);
-
 $db = getDB();
 
 $stmt = $db->prepare("SELECT i.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address, c.city as customer_city 
@@ -619,6 +615,39 @@ $pageTitle = 'Print Receipt';
                 box-shadow: none;
             }
         }
+        
+.previous-balance-row{
+    display:grid;
+    grid-template-columns:25% 25% 25% 25%;
+    margin:-1px -12px 5px -12px;
+    border-bottom:1px solid #000;
+    background:#fff3cd;
+}
+
+.previous-balance-row > div{
+    padding:5px 8px;
+    border-left:0px solid #000;
+    display:flex;
+    align-items:center;
+}
+
+.pb-empty{
+    border-left:none;
+}
+
+.pb-value1{
+    justify-content:right;
+    font-family:'Segoe UI', Arial, sans-serif;
+    font-weight:bold;
+}
+
+.pb-label1{
+    justify-content:flex-end;
+    text-align:right;
+    font-family:'Noto Nastaliq Urdu', serif;
+    font-weight:bold;
+    line-height:1.3;
+}
 
         @media screen {
             body {
@@ -636,10 +665,17 @@ $pageTitle = 'Print Receipt';
 </head>
 <body>
 
-    <div class="no-print">
+    <!--<div class="no-print">
         <button onclick="window.print()">🖨️ Print Receipt</button>
         <a href="<?= url('invoices/show.php?id=' . $id) ?>">← Back to Invoice</a>
         <a href="<?= url('invoices/print.php?id=' . $id) ?>">📄 Full Invoice</a>
+    </div>-->
+    
+        <div class="no-print" style="padding:16px;">
+        <button onclick="window.print()"><i class="bi bi-printer"></i> Print</button>
+        <button onclick="exportPdf()">Export PDF</button>
+        <button onclick="exportJpg()">Export JPG</button>|
+        <a href="<?= url('invoices/index.php?id=' . $id) ?>">Back Invoice List</a>
     </div>
 
     <div class="print-container">
@@ -692,7 +728,7 @@ $pageTitle = 'Print Receipt';
                  <div class="value"><?= htmlspecialchars($invoice['manual_book_no'] ?: '-') ?></div>
             </div>
             <div class="meta-item">
-                <div class="label">رتی</div>
+                <div class="label">رتی اندر</div>
               
                 <div class="value"><?= formatRattiPrint($invoice['ratti']) ?></div>
             </div>
@@ -785,7 +821,19 @@ $pageTitle = 'Print Receipt';
                 }
             ?>
             
-            <!-- Row 1: Previous Balance -->
+<div class="previous-balance-row">
+    <div class="pb-empty"></div>
+    <div class="pb-empty"></div>
+
+    <div class="pb-value1">
+        <?= $prevBalWord ?><?= number_format(abs($prevBal),3) ?> g
+    </div>
+
+    <div class="pb-label1">
+        سابقہ بیلنس
+    </div>
+</div>
+            <!-- Row 1: Previous Balance 
             <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex: 2; min-height: 20px;"></div>
                 <div style="flex: 1; text-align: right;">
@@ -794,13 +842,14 @@ $pageTitle = 'Print Receipt';
                 <div style="flex: 1; text-align: right;">
                     <span class="balance-label">سابقہ بیلنس:</span>
                 </div>
-            </div>
+            </div>-->
+            
 
             <!-- Row 2: Total Khalis -->
             <div class="balance-row" style="display: flex; justify-content: space-between; align-items: center;">
                 <div style="flex: 2; min-height: 20px;"></div>
                 <div style="flex: 1; text-align: right;">
-                    <span class="balance-value"><?= number_format($invoice['effective_gold'], 3) ?> g</span>
+                    <span class="balance-value"><?= number_format($invoice['effective_gold']+$prevBal, 3) ?> g</span>
                 </div>
                 <div style="flex: 1; text-align: right;">
                     <span class="balance-label">+ ٹوٹل خالص:</span>
@@ -889,7 +938,7 @@ $pageTitle = 'Print Receipt';
                     </div>
                     <div class="history-item">
                         <span class="hist-value"><?= formatRattiPrint($prev['ratti']) ?>&nbsp;&nbsp; رتی اندر</span>
-                        <span class="hist-label">رتی:</span>
+                        <span class="hist-label">رتی اندر:</span>
                     </div>
                     <div class="history-item">
                         <span class="hist-value"><?= number_format($prev['total_weight'], 3) ?> &nbsp;&nbsp; (گرام)</span>
@@ -951,5 +1000,35 @@ $pageTitle = 'Print Receipt';
         
 
     </div>
+    
+    
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const exportName = <?= json_encode($invoice['invoice_no']) ?>;
+async function captureInvoice() {
+    const el = document.querySelector('.print-container');
+    if (!window.html2canvas) { alert('Export library not loaded. Please check internet connection.'); throw new Error('html2canvas missing'); }
+    return await html2canvas(el, {scale: 3, backgroundColor: '#ffffff', useCORS: true});
+}
+async function exportJpg() {
+    const canvas = await captureInvoice();
+    const a = document.createElement('a');
+    a.download = exportName + '.jpg';
+    a.href = canvas.toDataURL('image/jpeg', 0.95);
+    a.click();
+}
+async function exportPdf() {
+    const canvas = await captureInvoice();
+    if (!window.jspdf) { alert('PDF library not loaded. Please check internet connection.'); return; }
+    const img = canvas.toDataURL('image/jpeg', 0.98);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', unit: 'pt', format: [canvas.width, canvas.height]});
+    pdf.addImage(img, 'JPEG', 0, 0, canvas.width, canvas.height);
+    pdf.save(exportName + '.pdf');
+}
+function togglePrintTheme(){var t=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('mj_theme',t)}catch(e){}}
+</script>
+    
 </body>
 </html>

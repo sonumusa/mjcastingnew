@@ -42,9 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Register - Gold Workshop</title>
-        <script>
-        (function(){try{var t=localStorage.getItem('mj_theme')||'dark';document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
-    </script>
     <style>
         body{margin:0;font-family:'Inter',Arial,Helvetica,sans-serif;background:#0b1120;color:#e8edf5}
         .page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -62,21 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .actions{text-align:center;margin-top:16px;font-size:14px}
         .actions a{color:#DAA520;text-decoration:none}
         .alert{margin-bottom:16px;padding:14px 16px;border:1px solid #f43f5e;background:rgba(244,63,94,0.1);color:#f43f5e;border-radius:12px}
-    
-        :root{--bg-body:#0b1120;--bg-card:#131c31;--bg-surface:#1a2744;--border-color:#1e3050;--text-primary:#e8edf5;--text-secondary:#8899b4;--text-muted:#5a6d8a;--gold-primary:#DAA520;--shadow-auth:0 20px 50px rgba(0,0,0,.5)}
-        html[data-theme="light"]{--bg-body:#f5f7fb;--bg-card:#ffffff;--bg-surface:#f1f5f9;--border-color:#d9e2ec;--text-primary:#111827;--text-secondary:#4b5563;--text-muted:#6b7280;--gold-primary:#B8860B;--shadow-auth:0 20px 50px rgba(15,23,42,.12)}
-        html[data-theme="light"] body{background:var(--bg-body)!important;color:var(--text-primary)!important}
-        html[data-theme="light"] .card, html[data-theme="light"] .module-card{background:var(--bg-card)!important;border-color:var(--border-color)!important;box-shadow:var(--shadow-auth)!important;color:var(--text-primary)!important}
-        html[data-theme="light"] .field input{background:#fff!important;color:var(--text-primary)!important;border-color:var(--border-color)!important}
-        .standalone-theme-toggle{position:fixed;top:16px;right:16px;z-index:20;display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-secondary);font-weight:700;cursor:pointer}
-        html[data-theme="light"] .logo p, html[data-theme="light"] .subtitle, html[data-theme="light"] .hint, html[data-theme="light"] .field label, html[data-theme="light"] .checkbox{color:var(--text-secondary)!important}
-
-
     </style>
 </head>
 <body>
-    <button type="button" class="standalone-theme-toggle" id="standalone-theme-toggle">🌙 <span>Dark</span></button>
-
     <div class="page">
         <div class="card">
             <div class="logo">
@@ -111,12 +96,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
-
-<script>
-(function(){
- function apply(t,p){t=t==='light'?'light':'dark';document.documentElement.setAttribute('data-theme',t);if(p){try{localStorage.setItem('mj_theme',t)}catch(e){}}var b=document.getElementById('standalone-theme-toggle');if(b){b.innerHTML=(t==='light'?'☀️ <span>Light</span>':'🌙 <span>Dark</span>');}}
- document.addEventListener('DOMContentLoaded',function(){var t='dark';try{t=localStorage.getItem('mj_theme')||document.documentElement.getAttribute('data-theme')||'dark'}catch(e){}apply(t,false);var b=document.getElementById('standalone-theme-toggle');if(b)b.addEventListener('click',function(){apply(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light',true)});});
-})();
-</script>
 </body>
 </html>

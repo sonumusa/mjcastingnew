@@ -1,10 +1,12 @@
 <?php
-require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
 
 require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('wax/invoice_create.php');
+    redirect('invoice_create.php');
 }
 
 // 1. Inputs
@@ -28,18 +30,18 @@ try {
     $pdo->beginTransaction();
 
     // 2. Create Invoice
-    $stmt = $pdo->prepare("INSERT INTO wax_invoices (customer_id, invoice_date, created_by) VALUES (?, ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO invoices (customer_id, invoice_date, created_by) VALUES (?, ?, ?)");
     $stmt->execute([$customer_id, $invoice_date, $_SESSION['user_id']]);
     $invoice_id = $pdo->lastInsertId();
 
     $total_invoice_amount = 0;
 
     // 3. Process Items
-    $stmtItem = $pdo->prepare("SELECT category FROM wax_items WHERE id = ?");
-    $stmtWorker = $pdo->prepare("SELECT default_percentage, commission_type, commission_rate FROM wax_workers WHERE id = ?");
+    $stmtItem = $pdo->prepare("SELECT category FROM items WHERE id = ?");
+    $stmtWorker = $pdo->prepare("SELECT default_percentage, commission_type, commission_rate FROM workers WHERE id = ?");
     
     $insertItem = $pdo->prepare("
-        INSERT INTO wax_invoice_items 
+        INSERT INTO invoice_items 
         (invoice_id, item_id, worker_id, qty, rate, amount, worker_percentage, partner_percentage, commission_amount, wax_qty, wax_rate, design_qty, design_rate, wax_item_id, wax_worker_id, wax_commission) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
@@ -156,12 +158,12 @@ try {
     }
 
     // 4. Update Invoice Total
-    $pdo->prepare("UPDATE wax_invoices SET total_amount = ? WHERE id = ?")
+    $pdo->prepare("UPDATE invoices SET total_amount = ? WHERE id = ?")
         ->execute([$total_invoice_amount, $invoice_id]);
 
     $pdo->commit();
     
-    redirect('wax/invoices.php');
+    redirect("index.php");
 
 } catch (Exception $e) {
     $pdo->rollBack();

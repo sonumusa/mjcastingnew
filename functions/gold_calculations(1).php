@@ -1,42 +1,11 @@
 <?php
 // ============================================================
-// Gold Calculation Functions — FIXED VERSION
-// ------------------------------------------------------------
-// FIX SUMMARY:
-// 1) Naya reliable function goldTableExists() — seedha SHOW TABLES
-//    se check karta hai (cached + try/catch).
-// 2) getPreviousBalance(), recalculateChain(),
-//    recalculateInventoryStock(), ensureInvoiceMultipleDateColumns()
-//    mein purana `function_exists('tableExists') && tableExists(...)`
-//    guard hata diya — usi ki wajah se `invoice_multiple` table
-//    balance aur chain se chhup jati thi (single invoices is liye
-//    theek chalti thin kyunke unki query per koi guard nahi tha).
-// 3) Har optional table ki query ab try/catch mein hai — chahe
-//    table na ho, page kabhi crash nahi hoga.
+// Gold Calculation Functions
 // ============================================================
 
 /**
- * Reliable table existence check — DB se seedha, cached, crash-proof.
- */
-if (!function_exists('goldTableExists')) {
-    function goldTableExists(string $table): bool {
-        static $cache = [];
-        if (array_key_exists($table, $cache)) {
-            return $cache[$table];
-        }
-        try {
-            $db = getDB();
-            $stmt = $db->query('SHOW TABLES LIKE ' . $db->quote($table));
-            return $cache[$table] = (bool) $stmt->fetchColumn();
-        } catch (Throwable $e) {
-            return $cache[$table] = false;
-        }
-    }
-}
-
-/**
  * Custom rounding: round to 2 decimal places with threshold at 8 (not 5).
- *
+ * 
  * Examples:
  *   10.156 → 10.15  (third decimal 6 < 8, truncate)
  *   10.154 → 10.15  (third decimal 4 < 8, truncate)
@@ -49,7 +18,7 @@ function customRoundTo2(float $value): float {
     $scaled = (int) round($value * 1000);
     $hundreds = intdiv($scaled, 10);      // value * 100 truncated
     $remainder = abs($scaled) % 10;       // third decimal digit (0-9)
-
+    
     // Handle negative numbers correctly
     if ($scaled < 0) {
         if ($remainder >= 8) {
@@ -58,7 +27,7 @@ function customRoundTo2(float $value): float {
             return $hundreds / 100;
         }
     }
-
+    
     if ($remainder >= 8) {
         return ($hundreds + 1) / 100;
     } else {
@@ -68,7 +37,7 @@ function customRoundTo2(float $value): float {
 
 /**
  * Calculate all invoice fields from input
- *
+ * 
  * Calculation Flow:
  * 1. Waste Weight = Casting Weight ÷ 10 × Ratti Deduction Rate  [custom rounded to 2dp]
  * 2. Total Weight = Casting Weight + Waste Weight
@@ -127,7 +96,7 @@ function calculateGold(array $input): array {
 
     // Step 10: Remaining Balance
     $remainingBalance = round(
-        $previousBalance + $effectiveGold - $wasooli - $totalReceivedKhalis,
+        $previousBalance + $effectiveGold - $wasooli - $totalReceivedKhalis, 
         3
     );
 
@@ -175,11 +144,6 @@ function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
 /**
  * Get current/previous balance for a customer.
  * Balance = Opening + Invoice Given + Invoice Multiple Given + Gold Gives - Invoice Receives - Gold Receipts - Wasooli
- *
- * FIX: `invoice_multiple` aur `gold_gives` per ab reliable check hai.
- * Pehle agar tableExists() missing/false hota to multiple invoices
- * ka poora sum chhup jata — isi liye 2nd multiple invoice ka opening
- * ghalat (customer ka opening_balance) save hota tha.
  */
 function getPreviousBalance(int $customerId, ?int $excludeInvoiceId = null): float {
     $db = getDB();
@@ -191,42 +155,30 @@ function getPreviousBalance(int $customerId, ?int $excludeInvoiceId = null): flo
 
     $balance = (float) $customer['opening_balance'];
 
-    // Single invoices
-    try {
-        $sql = "SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoices WHERE customer_id = ? AND status = 'active'";
-        $params = [$customerId];
-        if ($excludeInvoiceId) {
-            $sql .= " AND id != ?";
-            $params[] = $excludeInvoiceId;
-        }
-        $stmt = $db->prepare($sql);
-        $stmt->execute($params);
-        $balance += (float) $stmt->fetchColumn();
-    } catch (Throwable $e) { /* table na ho to skip */ }
+    $sql = "SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoices WHERE customer_id = ? AND status = 'active'";
+    $params = [$customerId];
+    if ($excludeInvoiceId) {
+        $sql .= " AND id != ?";
+        $params[] = $excludeInvoiceId;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $balance += (float) $stmt->fetchColumn();
 
-    // Gold receipts (wasooli) — balance kam karte hain
-    try {
-        $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
+    $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
+    $stmt->execute([$customerId]);
+    $balance -= (float) $stmt->fetchColumn();
+
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
         $stmt->execute([$customerId]);
-        $balance -= (float) $stmt->fetchColumn();
-    } catch (Throwable $e) { /* skip */ }
-
-    // Standalone gold gives — balance barhate hain
-    if (goldTableExists('gold_gives')) {
-        try {
-            $stmt = $db->prepare("SELECT COALESCE(SUM(total_khalis_weight), 0) FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
-            $stmt->execute([$customerId]);
-            $balance += (float) $stmt->fetchColumn();
-        } catch (Throwable $e) { /* skip */ }
+        $balance += (float) $stmt->fetchColumn();
     }
 
-    // Multiple invoices — FIX: ab hamesha shumar hongi
-    if (goldTableExists('invoice_multiple')) {
-        try {
-            $stmt = $db->prepare("SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
-            $stmt->execute([$customerId]);
-            $balance += (float) $stmt->fetchColumn();
-        } catch (Throwable $e) { /* skip */ }
+    if (function_exists('tableExists') && tableExists('invoice_multiple')) {
+        $stmt = $db->prepare("SELECT COALESCE(SUM(effective_gold - total_received_khalis - wasooli), 0) FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
+        $stmt->execute([$customerId]);
+        $balance += (float) $stmt->fetchColumn();
     }
 
     return round($balance, 3);
@@ -234,10 +186,6 @@ function getPreviousBalance(int $customerId, ?int $excludeInvoiceId = null): flo
 
 /**
  * Recalculate balance chain for a customer's invoices
- *
- * FIX: `invoice_multiple` pehle `function_exists('tableExists') && ...`
- * guard ki wajah se chain se bahar ho sakti thin — phir chain khaali
- * reh jati aur 2nd multiple invoice ka opening ghalat rehta.
  */
 function recalculateChain(int $customerId, ?int $fromInvoiceId = null): void {
     $db = getDB();
@@ -249,48 +197,36 @@ function recalculateChain(int $customerId, ?int $fromInvoiceId = null): void {
 
     $transactions = [];
 
-    // Single invoices
-    try {
-        $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoices WHERE customer_id = ? AND status = 'active'");
-        $stmt->execute([$customerId]);
-        foreach ($stmt->fetchAll() as $row) {
-            $transactions[] = ['kind'=>'invoice','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+1,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
-        }
-    } catch (Throwable $e) { /* skip */ }
-
-    // Gold receipts
-    try {
-        $stmt = $db->prepare("SELECT id, receipt_date AS txn_date, total_khalis_weight FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
-        $stmt->execute([$customerId]);
-        foreach ($stmt->fetchAll() as $row) {
-            $transactions[] = ['kind'=>'receipt','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+2,'net'=>-((float)$row['total_khalis_weight'])];
-        }
-    } catch (Throwable $e) { /* skip */ }
-
-    // Standalone gold gives
-    if (goldTableExists('gold_gives')) {
-        try {
-            $stmt = $db->prepare("SELECT id, give_date AS txn_date, total_khalis_weight FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
-            $stmt->execute([$customerId]);
-            foreach ($stmt->fetchAll() as $row) {
-                $transactions[] = ['kind'=>'gold_give','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+3,'net'=>(float)$row['total_khalis_weight']];
-            }
-        } catch (Throwable $e) { /* skip */ }
+    $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoices WHERE customer_id = ? AND status = 'active'");
+    $stmt->execute([$customerId]);
+    foreach ($stmt->fetchAll() as $row) {
+        $transactions[] = ['kind'=>'invoice','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+1,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
     }
 
-    // Multiple invoices — FIX: ab hamesha chain mein shamil
-    if (goldTableExists('invoice_multiple')) {
-        try {
-            $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
-            $stmt->execute([$customerId]);
-            foreach ($stmt->fetchAll() as $row) {
-                $transactions[] = ['kind'=>'invoice_multiple','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+4,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
-            }
-        } catch (Throwable $e) { /* skip */ }
+    $stmt = $db->prepare("SELECT id, receipt_date AS txn_date, total_khalis_weight FROM gold_receipts WHERE customer_id = ? AND deleted_at IS NULL");
+    $stmt->execute([$customerId]);
+    foreach ($stmt->fetchAll() as $row) {
+        $transactions[] = ['kind'=>'receipt','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+2,'net'=>-((float)$row['total_khalis_weight'])];
+    }
+
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $stmt = $db->prepare("SELECT id, give_date AS txn_date, total_khalis_weight FROM gold_gives WHERE customer_id = ? AND deleted_at IS NULL");
+        $stmt->execute([$customerId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $transactions[] = ['kind'=>'gold_give','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+3,'net'=>(float)$row['total_khalis_weight']];
+        }
+    }
+
+    if (function_exists('tableExists') && tableExists('invoice_multiple')) {
+        $stmt = $db->prepare("SELECT id, invoice_date AS txn_date, effective_gold, wasooli, total_received_khalis FROM invoice_multiple WHERE customer_id = ? AND status = 'active'");
+        $stmt->execute([$customerId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $transactions[] = ['kind'=>'invoice_multiple','id'=>(int)$row['id'],'date'=>$row['txn_date'],'sort'=>(int)$row['id']*10+4,'net'=>(float)$row['effective_gold']-(float)$row['wasooli']-(float)$row['total_received_khalis']];
+        }
     }
 
     usort($transactions, function($a, $b) {
-        $cmp = strcmp((string)$a['date'], (string)$b['date']);
+        $cmp = strcmp($a['date'], $b['date']);
         return $cmp !== 0 ? $cmp : ($a['sort'] <=> $b['sort']);
     });
 
@@ -300,7 +236,7 @@ function recalculateChain(int $customerId, ?int $fromInvoiceId = null): void {
         $runningBalance = round($runningBalance + (float)$txn['net'], 3);
         if ($txn['kind'] === 'invoice') {
             $db->prepare("UPDATE invoices SET previous_balance = ?, remaining_balance = ? WHERE id = ?")->execute([$previous, $runningBalance, $txn['id']]);
-        } elseif ($txn['kind'] === 'invoice_multiple') {
+        } elseif ($txn['kind'] === 'invoice_multiple' && function_exists('tableExists') && tableExists('invoice_multiple')) {
             $db->prepare("UPDATE invoice_multiple SET previous_balance = ?, remaining_balance = ? WHERE id = ?")->execute([$previous, $runningBalance, $txn['id']]);
         }
     }
@@ -349,10 +285,8 @@ function recalculateInventoryStock(): array {
     } catch (Throwable $e) { $multipleGivenWeight = 0.0; }
 
     $goldGiveWeight = 0.0;
-    if (goldTableExists('gold_gives')) {
-        try {
-            $goldGiveWeight = (float)$db->query("SELECT COALESCE(SUM(total_khalis_weight),0) FROM gold_gives WHERE deleted_at IS NULL")->fetchColumn();
-        } catch (Throwable $e) { $goldGiveWeight = 0.0; }
+    if (function_exists('tableExists') && tableExists('gold_gives')) {
+        $goldGiveWeight = (float)$db->query("SELECT COALESCE(SUM(total_khalis_weight),0) FROM gold_gives WHERE deleted_at IS NULL")->fetchColumn();
     }
 
     $totalReceived = round($receiptKhalis + $invoiceReceivedKhalis + $multipleReceivedKhalis, 3);
@@ -385,14 +319,14 @@ function recalculateInventoryStock(): array {
 function ensureInvoiceMultipleDateColumns(): void {
     $db = getDB();
     try {
-        if (goldTableExists('invoice_multiple_items')) {
+        if (function_exists('tableExists') && tableExists('invoice_multiple_items')) {
             $stmt = $db->query("SHOW COLUMNS FROM invoice_multiple_items LIKE 'item_date'");
             if (!$stmt->fetch()) {
                 $db->exec("ALTER TABLE invoice_multiple_items ADD COLUMN item_date DATE NULL AFTER invoice_multiple_id");
                 $db->exec("UPDATE invoice_multiple_items imi INNER JOIN invoice_multiple im ON im.id = imi.invoice_multiple_id SET imi.item_date = im.invoice_date WHERE imi.item_date IS NULL");
             }
         }
-        if (goldTableExists('invoice_multiple_receives')) {
+        if (function_exists('tableExists') && tableExists('invoice_multiple_receives')) {
             $stmt = $db->query("SHOW COLUMNS FROM invoice_multiple_receives LIKE 'receive_date'");
             if (!$stmt->fetch()) {
                 $db->exec("ALTER TABLE invoice_multiple_receives ADD COLUMN receive_date DATE NULL AFTER invoice_multiple_id");

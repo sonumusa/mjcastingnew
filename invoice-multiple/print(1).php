@@ -58,9 +58,6 @@ function mpBalanceClass($value): string {
     if ($v < -0.0005) return 'balance-jama';
     return 'balance-clear';
 }
-function mpAmount($value): string {
-    return number_format((float)$value, 0);
-}
 
 $sequence = [];
 foreach ($items as $it) {
@@ -75,10 +72,6 @@ foreach ($items as $it) {
         'ratti' => (float)$it['ratti'],
         'khalis' => (float)$it['gold_khalis'],
         'rp_weight' => (float)($it['rp_mazdori_weight'] ?? 0),
-        // NOTE: guessing the column name here as "rp_mazdori_amount" to match
-        // the existing "rp_mazdori_weight" column. If your real column has a
-        // different name, change it on the line below.
-        'rp_amount' => (float)($it['rp_mazdori_amount'] ?? 0),
         'casting_mazdori_weight' => (float)($it['casting_mazdori_weight'] ?? 0),
         'given' => (float)$it['effective_gold'],
         'received' => 0.0,
@@ -96,7 +89,6 @@ foreach ($receives as $r) {
         'ratti' => (float)$r['ratti_impurity'],
         'khalis' => (float)$r['khalis_weight'],
         'rp_weight' => 0.0,
-        'rp_amount' => 0.0,
         'casting_mazdori_weight' => 0.0,
         'given' => 0.0,
         'received' => (float)$r['khalis_weight'],
@@ -118,9 +110,8 @@ $finalBalance = round((float)$invoice['previous_balance'] + $totalGiven - $total
 
 $showRpWeight = array_sum(array_column($sequence, 'rp_weight')) > 0.0005;
 $showCastingMazdoriWeight = array_sum(array_column($sequence, 'casting_mazdori_weight')) > 0.0005;
-// Columns now: تاریخ, کام, تفصیل, وزن, رتی, [آر پی وزن, آر پی اماؤنٹ], [کاسٹنگ مزدوری وزن], سونا دیا, سونا وصول, باقی حساب
-$totalColumns = 8 + ($showRpWeight ? 2 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
-$middleColspan = 3 + ($showRpWeight ? 2 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
+$totalColumns = 7 + ($showRpWeight ? 1 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
+$middleColspan = 2 + ($showRpWeight ? 1 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
 $totalLabelColspan = $totalColumns - 3;
 
 ?><!DOCTYPE html>
@@ -132,11 +123,12 @@ $totalLabelColspan = $totalColumns - 3;
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 /* ================================================================
-   Paper size: A4, portrait (this is the paper you print on).
-   height stays "auto" so the browser keeps adding pages 2, 3, etc.
-   as needed instead of cutting content off.
+   IMPORTANT FIX: page size no longer has a FIXED height (200mm).
+   "auto" lets the browser create as many pages as the content
+   needs, instead of squeezing everything into one page and
+   cutting the rest off.
    ================================================================ */
-@page { size: A4 portrait; margin: 8mm; }
+@page { size: 145mm auto; margin: 0; }
 * { box-sizing: border-box; }
 
 body {
@@ -151,12 +143,12 @@ body {
 
 .urdu { font-family:'Noto Nastaliq Urdu', serif; direction:rtl; }
 
-/* Container now matches A4 printable width (210mm page - 8mm margin
-   on each side = 194mm). min-height keeps a single-page invoice
-   looking full; it never blocks extra pages from being added. */
+/* IMPORTANT FIX: height -> min-height, overflow:hidden removed.
+   Font sizes bumped up across this file so it is easy to read for
+   someone who isn't comfortable with small print or numbers. */
 .print-container {
-    width:194mm;
-    min-height:281mm;
+    width:145mm;
+    min-height:200mm;
     margin:0 auto 20px auto;
     background:#fff;
     font-size:11.5px;
@@ -194,27 +186,17 @@ body {
 
 .table-title { background:#16395f; color:#fff; text-align:center; padding:5px; font-weight:800; margin-top:5px; font-size:13px; }
 table { width:100%; border-collapse:collapse; }
-/* Compact rows: minimal padding, tight line-height, and text forced
-   onto a single line (no wrapping) so every row stays as short as
-   possible and more rows fit per printed page. */
-.hisab-table th {
-    background:#d9b14a; color:#000; border:1.5px solid #000;
-    padding:2px 3px; font-size:9px; text-align:center;
-    white-space:nowrap; line-height:1.8;
-}
-.hisab-table td {
-    border:1px solid #000; padding:1px 3px; font-size:9px;
-    vertical-align:middle; white-space:nowrap; line-height:2.15;
-}
+.hisab-table th { background:#d9b14a; color:#000; border:1.5px solid #000; padding:3px 3px; font-size:9px; text-align:center; }
+.hisab-table td { border:1px solid #000; padding:3px 3px; font-size:9px; vertical-align:middle; }
 .hisab-table tbody tr:nth-child(even) { background:#f8f8f8; }
-.badge { display:inline-block; padding:1px 6px; border-radius:4px; color:#fff; font-weight:800; min-width:56px; text-align:center; font-size:9px; white-space:nowrap; }
+.badge { display:inline-block; padding:2px 6px; border-radius:4px; color:#fff; font-weight:800; min-width:56px; text-align:center; font-size:9px; }
 .badge.given { background:#b91c1c; }
 .badge.received { background:#047857; }
-.num { font-weight:800; font-size:9.5px; text-align:right; font-family:Arial, sans-serif; white-space:nowrap; }
+.num { font-weight:800; font-size:9.5px; text-align:right; font-family:Arial, sans-serif; }
 .center { text-align:center; }
-.details { font-size:8px; color:#333; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52mm; }
+.details { font-size:8px; color:#333; line-height:1.2; }
 /* Plain sentence shown under every row, e.g. "ہم نے کاریگر کو سونا دیا" */
-.plain-line { font-size:9px; font-weight:700; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52mm; }
+.plain-line { font-size:9px; font-weight:700; margin-top:2px; }
 .given-text { color:#b91c1c; }
 .received-text { color:#047857; }
 .balance-lena { color:#b91c1c; font-weight:900; }
@@ -237,12 +219,9 @@ table { width:100%; border-collapse:collapse; }
     body { background:#fff; margin:0; padding:0; }
     .print-container { margin:0; box-shadow:none; min-height:0; }
 
-    /* Repeat the table header row (column titles) on every printed page.
-       NOTE: we deliberately do NOT set tfoot to table-footer-group here —
-       that was causing the totals row to be duplicated onto page 1 before
-       all the entries had even printed. Now the total row prints only once,
-       right after the last entry, wherever that naturally falls. */
+    /* Repeat the table header row + totals on every printed page */
     .hisab-table thead { display: table-header-group; }
+    .hisab-table tfoot { display: table-footer-group; }
 
     /* Never let a single row, or these blocks, be sliced across a page break */
     .hisab-table tr,
@@ -278,10 +257,14 @@ table { width:100%; border-collapse:collapse; }
         </div>
     </div>
 
-    <div class="title-strip"><span class="urdu">کاریگر کا حساب</span> — MULTIPLE INVOICE</div>
+    <div class="title-strip"><span class="urdu">کاریگر کا سادہ سونا حساب</span> — MULTIPLE INVOICE</div>
 
     <!-- Plain-language legend so anyone can understand the colors without reading -->
-
+    <div class="legend urdu">
+        <span><span class="dot given"></span> سرخ = سونا دیا</span>
+        <span><span class="dot received"></span> سبز = سونا واپس آیا</span>
+        <span><span class="dot balance"></span> پیلا = باقی حساب</span>
+    </div>
 
     <div class="meta">
         <div><span class="label urdu">کاریگر / پارٹی</span><span class="value"><?= htmlspecialchars($invoice['customer_name'] ?? '-') ?></span></div>
@@ -297,9 +280,8 @@ table { width:100%; border-collapse:collapse; }
                 <th class="urdu">تاریخ</th>
                 <th class="urdu">کام</th>
                 <th class="urdu">تفصیل</th>
-                <th class="urdu">وزن</th>
-                <th class="urdu">رتی</th>
-                <?php if ($showRpWeight): ?><th class="urdu">آر پی وزن</th><th class="urdu">آر پی اماؤنٹ</th><?php endif; ?>
+                <th class="urdu">وزن / رتی</th>
+                <?php if ($showRpWeight): ?><th class="urdu">آر پی وزن</th><?php endif; ?>
                 <?php if ($showCastingMazdoriWeight): ?><th class="urdu">کاسٹنگ مزدوری وزن</th><?php endif; ?>
                 <th class="urdu">سونا دیا</th>
                 <th class="urdu">سونا وصول</th>
@@ -325,18 +307,14 @@ table { width:100%; border-collapse:collapse; }
                     <td>
                         <div class="details" style="font-weight:700;color:#111;"><?= htmlspecialchars($row['description']) ?></div>
                         <!-- Plain sentence, so someone who struggles reading a table can still understand this row -->
-                        <div class="plain-line urdu <?= $row['kind'] === 'given' ? 'given-text' : 'received-text' ?>"></div>
+                        <div class="plain-line urdu <?= $row['kind'] === 'given' ? 'given-text' : 'received-text' ?>"><?= htmlspecialchars($row['simple_text']) ?></div>
                     </td>
                     <td class="center">
                         <div class="num"><?= mpWeight($row['main_weight']) ?> g</div>
+                        <?php if ($row['ratti'] > 0): ?><div class="details urdu">رتی: <?= mpRatti($row['ratti']) ?></div><?php endif; ?>
+                        <?php if ($row['khalis'] > 0): ?><div class="details urdu">خالص: <?= mpWeight($row['khalis']) ?> g</div><?php endif; ?>
                     </td>
-                    <td class="center">
-                        <div class="num"><?= $row['ratti'] > 0 ? mpRatti($row['ratti']) : 'خالص' ?></div>
-                    </td>
-                    <?php if ($showRpWeight): ?>
-                    <td class="num"><?= !empty($row['rp_weight']) && $row['rp_weight'] > 0 ? mpWeight($row['rp_weight']) : '-' ?></td>
-                    <td class="num"><?= !empty($row['rp_amount']) && $row['rp_amount'] > 0 ? '' . mpAmount($row['rp_amount']) : '-' ?></td>
-                    <?php endif; ?>
+                    <?php if ($showRpWeight): ?><td class="num"><?= !empty($row['rp_weight']) && $row['rp_weight'] > 0 ? mpWeight($row['rp_weight']) : '-' ?></td><?php endif; ?>
                     <?php if ($showCastingMazdoriWeight): ?><td class="num"><?= !empty($row['casting_mazdori_weight']) && $row['casting_mazdori_weight'] > 0 ? mpWeight($row['casting_mazdori_weight']) : '-' ?></td><?php endif; ?>
                     <td class="num given-text"><?= $row['given'] > 0 ? mpWeight($row['given']) : '-' ?></td>
                     <td class="num received-text"><?= $row['received'] > 0 ? mpWeight($row['received']) : '-' ?></td>

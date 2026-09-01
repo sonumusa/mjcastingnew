@@ -1,0 +1,270 @@
+<?php
+require_once __DIR__ . '/../config.php';
+requireAuth();
+require_once __DIR__ . '/../functions/gold_calculations.php';
+
+$pageTitle = 'Edit Multiple Invoice';
+$db = getDB();
+ensureInvoiceMultipleDateColumns();
+$id = (int) query('id', 0);
+
+$stmt = $db->prepare("SELECT * FROM invoice_multiple WHERE id = ?");
+$stmt->execute([$id]);
+$invoice = $stmt->fetch();
+if (!$invoice) {
+    setFlash('error', 'Multiple invoice not found.');
+    redirect('invoice-multiple/index.php');
+}
+if ($invoice['status'] !== 'active') {
+    setFlash('error', 'Cancelled multiple invoice cannot be edited.');
+    redirect('invoice-multiple/show.php?id=' . $id);
+}
+
+$stmt = $db->prepare("SELECT * FROM invoice_multiple_items WHERE invoice_multiple_id = ? ORDER BY id ASC");
+$stmt->execute([$id]);
+$existingItems = $stmt->fetchAll();
+
+// Preserve already-saved manual adjustments in the edit screen.
+foreach ($existingItems as &$existingItem) {
+    $baseWaste = 0;
+    if ((float)$existingItem['casting_weight'] > 0 && (float)$existingItem['ratti_rate'] > 0) {
+        $baseWaste = customRoundTo2(((float)$existingItem['casting_weight'] / 10) * (float)$existingItem['ratti_rate']);
+    }
+    $existingItem['waste_adjustment'] = round((float)$existingItem['waste_weight'] - $baseWaste, 3);
+    $baseMale = 0;
+    if ((float)$existingItem['total_weight'] > 0 && (float)$existingItem['ratti'] > 0) {
+        $baseMale = customRoundTo2(((float)$existingItem['total_weight'] / 96) * (float)$existingItem['ratti']);
+    }
+    $existingItem['male_waste_adjustment'] = round((float)$existingItem['male_waste'] - $baseMale, 3);
+}
+unset($existingItem);
+
+$stmt = $db->prepare("SELECT * FROM invoice_multiple_receives WHERE invoice_multiple_id = ? ORDER BY id ASC");
+$stmt->execute([$id]);
+$existingReceives = $stmt->fetchAll();
+
+$customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status='active' ORDER BY name")->fetchAll();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrf();
+
+    $oldCustomerId = (int)$invoice['customer_id'];
+    $customerId = (int) post('customer_id');
+    $invoiceType = post('invoice_type', 'customer');
+    $invoiceDate = post('invoice_date', date('Y-m-d'));
+    $manualBookNo = post('manual_book_no');
+    $remarks = post('remarks');
+    $wasooli = parseDecimal(post('wasooli', 0));
+
+    if (!$customerId) {
+        setFlash('error', 'Please select a party.');
+        back();
+    }
+
+    $items = post('items', []);
+    $itemRows = [];
+    $tot = ['casting'=>0,'waste'=>0,'total'=>0,'male'=>0,'khalis'=>0,'rp_w'=>0,'rp_amt'=>0,'cast_w'=>0,'cast_amt'=>0,'effective'=>0];
+
+    if (is_array($items)) {
+        foreach ($items as $it) {
+            $itemDate = !empty($it['item_date'] ?? '') ? $it['item_date'] : $invoiceDate;
+            $casting = parseDecimal($it['casting_weight'] ?? 0);
+            if ($casting <= 0) continue;
+
+            $ratti = parseDecimal($it['ratti'] ?? 0);
+            $rate = parseDecimal($it['ratti_rate'] ?? 0);
+            $rpW = parseDecimal($it['rp_mazdori_weight'] ?? 0);
+            $rpAmt = parseDecimal($it['rp_mazdori_amount'] ?? 0);
+            $castW = parseDecimal($it['casting_mazdori_weight'] ?? 0);
+            $castAmt = parseDecimal($it['casting_mazdori_amount'] ?? 0);
+            $wasteAdj = parseDecimal($it['waste_adjustment'] ?? 0);
+            $maleAdj = parseDecimal($it['male_waste_adjustment'] ?? 0);
+
+            $calc = calculateGold([
+                'casting_weight' => $casting,
+                'ratti' => $ratti,
+                'ratti_rate' => $rate,
+                'rp_mazdori_weight' => $rpW,
+                'casting_mazdori_weight' => $castW,
+                'total_received_khalis' => 0,
+                'previous_balance' => 0,
+                'wasooli' => 0,
+            ]);
+
+            if ($wasteAdj != 0 || $maleAdj != 0) {
+                $calc['waste_weight'] = max(0, round($calc['waste_weight'] + $wasteAdj, 3));
+                $calc['total_weight'] = round($calc['casting_weight'] + $calc['waste_weight'], 3);
+                $calc['male_waste'] = max(0, round($calc['male_waste'] + $maleAdj, 3));
+                $calc['gold_khalis'] = max(0, round($calc['total_weight'] - $calc['male_waste'], 3));
+                $calc['effective_gold'] = round($calc['gold_khalis'] + $calc['rp_mazdori_weight'] + $calc['casting_mazdori_weight'], 3);
+            }
+
+            $row = [
+                'item_date' => $itemDate,
+                'description' => $it['description'] ?? '',
+                'casting_weight' => $calc['casting_weight'],
+                'ratti' => $calc['ratti'],
+                'ratti_rate' => $calc['ratti_rate'],
+                'waste_weight' => $calc['waste_weight'],
+                'total_weight' => $calc['total_weight'],
+                'male_waste' => $calc['male_waste'],
+                'gold_khalis' => $calc['gold_khalis'],
+                'rp_mazdori_weight' => $calc['rp_mazdori_weight'],
+                'rp_mazdori_amount' => $rpAmt,
+                'casting_mazdori_weight' => $calc['casting_mazdori_weight'],
+                'casting_mazdori_amount' => $castAmt,
+                'effective_gold' => $calc['effective_gold'],
+            ];
+
+            $itemRows[] = $row;
+            $tot['casting'] += $row['casting_weight'];
+            $tot['waste'] += $row['waste_weight'];
+            $tot['total'] += $row['total_weight'];
+            $tot['male'] += $row['male_waste'];
+            $tot['khalis'] += $row['gold_khalis'];
+            $tot['rp_w'] += $row['rp_mazdori_weight'];
+            $tot['rp_amt'] += $row['rp_mazdori_amount'];
+            $tot['cast_w'] += $row['casting_mazdori_weight'];
+            $tot['cast_amt'] += $row['casting_mazdori_amount'];
+            $tot['effective'] += $row['effective_gold'];
+        }
+    }
+
+    if (empty($itemRows)) {
+        setFlash('error', 'Please add at least one Gold Calculation row with casting weight.');
+        back();
+    }
+
+    $receives = post('receives', []);
+    $receiveRows = [];
+    $totalReceived = 0;
+    if (is_array($receives)) {
+        foreach ($receives as $rec) {
+            $receiveDate = !empty($rec['receive_date'] ?? '') ? $rec['receive_date'] : $invoiceDate;
+            $gross = parseDecimal($rec['gross_weight'] ?? 0);
+            $rattiImp = parseDecimal($rec['ratti_impurity'] ?? 0);
+            if ($gross <= 0) continue;
+            $khalis = convertToKhalis($gross, $rattiImp);
+            $receiveRows[] = [
+                'receive_date' => $receiveDate,
+                'description' => $rec['description'] ?? '',
+                'gross_weight' => $gross,
+                'ratti_impurity' => $rattiImp,
+                'khalis_weight' => $khalis,
+            ];
+            $totalReceived += $khalis;
+        }
+    }
+
+    $totalReceived = round($totalReceived, 3);
+    $previousBalance = ($customerId === $oldCustomerId) ? (float)$invoice['previous_balance'] : getPreviousBalance($customerId);
+    $effective = round($tot['effective'], 3);
+    $remaining = round($previousBalance + $effective - $totalReceived - $wasooli, 3);
+
+    try {
+        $db->beginTransaction();
+
+        $stmt = $db->prepare("UPDATE invoice_multiple SET
+            customer_id=?, invoice_type=?, invoice_date=?, manual_book_no=?,
+            total_casting_weight=?, total_waste_weight=?, total_weight=?, total_male_waste=?, total_gold_khalis=?, total_received_khalis=?,
+            total_rp_mazdori_weight=?, total_rp_mazdori_amount=?, total_casting_mazdori_weight=?, total_casting_mazdori_amount=?,
+            effective_gold=?, grand_total=?, wasooli=?, previous_balance=?, remaining_balance=?, remarks=?, updated_by=?
+            WHERE id=?");
+        $stmt->execute([
+            $customerId, $invoiceType, $invoiceDate, $manualBookNo,
+            round($tot['casting'],3), round($tot['waste'],3), round($tot['total'],3), round($tot['male'],3), round($tot['khalis'],3), $totalReceived,
+            round($tot['rp_w'],3), round($tot['rp_amt'],2), round($tot['cast_w'],3), round($tot['cast_amt'],2),
+            $effective, $effective, $wasooli, $previousBalance, $remaining, $remarks, $_SESSION['user_id'] ?? null, $id
+        ]);
+
+        $db->prepare("DELETE FROM invoice_multiple_items WHERE invoice_multiple_id=?")->execute([$id]);
+        $db->prepare("DELETE FROM invoice_multiple_receives WHERE invoice_multiple_id=?")->execute([$id]);
+
+        $ins = $db->prepare("INSERT INTO invoice_multiple_items (invoice_multiple_id,item_date,description,casting_weight,ratti,ratti_rate,waste_weight,total_weight,male_waste,gold_khalis,rp_mazdori_weight,rp_mazdori_amount,casting_mazdori_weight,casting_mazdori_amount,effective_gold) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        foreach ($itemRows as $r) {
+            $ins->execute([$id,$r['item_date'],$r['description'],$r['casting_weight'],$r['ratti'],$r['ratti_rate'],$r['waste_weight'],$r['total_weight'],$r['male_waste'],$r['gold_khalis'],$r['rp_mazdori_weight'],$r['rp_mazdori_amount'],$r['casting_mazdori_weight'],$r['casting_mazdori_amount'],$r['effective_gold']]);
+        }
+
+        $rin = $db->prepare("INSERT INTO invoice_multiple_receives (invoice_multiple_id,receive_date,description,gross_weight,ratti_impurity,khalis_weight) VALUES (?,?,?,?,?,?)");
+        foreach ($receiveRows as $r) {
+            $rin->execute([$id,$r['receive_date'],$r['description'],$r['gross_weight'],$r['ratti_impurity'],$r['khalis_weight']]);
+        }
+
+        recalculateChain($customerId);
+        if ($oldCustomerId !== $customerId) {
+            recalculateChain($oldCustomerId);
+        }
+        recalculateInventoryStock();
+
+        $db->commit();
+        setFlash('success', "Multiple Invoice {$invoice['invoice_no']} updated successfully.");
+        if (post('action') === 'print') redirect('invoice-multiple/print.php?id=' . $id);
+        redirect('invoice-multiple/show.php?id=' . $id);
+    } catch (Exception $e) {
+        $db->rollBack();
+        setFlash('error', 'Failed to update multiple invoice: ' . $e->getMessage());
+        back();
+    }
+}
+
+$extraCss = '<style>
+.invoice-grid{display:grid;grid-template-columns:1fr 360px;gap:28px;align-items:start}.form-section{background:var(--bg-card);border:1px solid var(--border-color);border-radius:16px;padding:24px;margin-bottom:24px}.section-header{display:flex;align-items:center;gap:12px;margin-bottom:18px;color:var(--gold-primary)}.input-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.full-width{grid-column:span 3}.calc-table{min-width:1650px}.calc-table input,.calc-table select{min-width:85px}.btn-add-row{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:rgba(16,185,129,.12);color:var(--success);border:1px dashed var(--success);border-radius:10px;cursor:pointer;font-weight:600;font-size:.85rem}.btn-remove-row{width:34px;height:34px;background:rgba(244,63,94,.1);color:var(--error);border:1px solid rgba(244,63,94,.2);border-radius:8px;cursor:pointer}.live-panel{position:sticky;top:88px;background:var(--bg-card);border:1px solid var(--gold-primary);border-radius:16px;padding:22px;box-shadow:var(--shadow-3)}.live-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05)}.live-value{font-family:JetBrains Mono,monospace;font-weight:700}.total-box{margin-top:16px;padding:16px;border-radius:12px;background:linear-gradient(135deg,#064e3b,#059669);color:#fff;text-align:center}.receive-row{display:grid;grid-template-columns:1fr 2fr 1fr 1fr 1fr 44px;gap:12px;align-items:end;margin-bottom:12px;padding:14px;background:var(--bg-surface);border-radius:12px;border:1px solid var(--border-color)}@media(max-width:1100px){.invoice-grid{grid-template-columns:1fr}.live-panel{position:static}}
+</style>';
+
+require_once __DIR__ . '/../includes/header.php';
+?>
+<form method="POST" id="multi-edit-form">
+    <?= csrfField() ?>
+    <input type="hidden" name="wasooli" id="wasooli" value="<?= htmlspecialchars($invoice['wasooli']) ?>">
+    <div class="invoice-grid">
+        <div>
+            <div class="page-header" style="margin-bottom:24px;"><div class="page-title-group"><h1>Edit Invoice Multiple</h1><p class="font-urdu" style="margin-top:4px;">ملٹی بل تبدیل کریں</p></div></div>
+
+            <div class="form-section"><div class="section-header"><i class="bi bi-info-circle"></i><h3>Invoice Details</h3></div>
+                <div class="input-grid">
+                    <div class="form-group full-width"><label>Invoice Type</label><select name="invoice_type" class="form-control"><option value="customer" <?= $invoice['invoice_type']==='customer'?'selected':'' ?>>Customer</option><option value="dukandar" <?= $invoice['invoice_type']==='dukandar'?'selected':'' ?>>Dukandar</option><option value="karigar" <?= $invoice['invoice_type']==='karigar'?'selected':'' ?>>Karigar</option></select></div>
+                    <div class="form-group full-width"><label>Party</label><select name="customer_id" id="customer_id" class="form-control" required onchange="updateCustomerBalance(this.value)"><option value="">Select Party</option><?php foreach($customers as $c): ?><option value="<?= $c['id'] ?>" data-opening="<?= $c['opening_balance'] ?>" <?= $invoice['customer_id']==$c['id']?'selected':'' ?>><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?></select><div id="customer-info" style="display:block;background:var(--bg-surface);border:1px solid var(--gold-muted);padding:12px 16px;border-radius:10px;margin-top:12px;"><span class="text-muted">Previous Sabqa Balance: </span><span id="last-balance-display" class="mono" style="font-weight:700;color:var(--gold-bright);"><?= number_format($invoice['previous_balance'],3) ?> g</span></div></div>
+                    <div class="form-group"><label>Date</label><input type="date" name="invoice_date" class="form-control" value="<?= htmlspecialchars($invoice['invoice_date']) ?>" required></div>
+                    <div class="form-group"><label>Book No</label><input type="text" name="manual_book_no" class="form-control" value="<?= htmlspecialchars($invoice['manual_book_no'] ?? '') ?>"></div>
+                    <div class="form-group"><label>Invoice No</label><input type="text" class="form-control" value="<?= htmlspecialchars($invoice['invoice_no']) ?>" disabled></div>
+                </div>
+            </div>
+
+            <div class="form-section"><div class="section-header"><i class="bi bi-calculator"></i><h3>Gold Calculation Rows</h3></div><div class="table-container"><table class="calc-table"><thead><tr><th>Date</th><th>Description</th><th>Casting</th><th>Ratti</th><th>Ratti Rate</th><th>Waste</th><th>Total</th><th>Male Waste</th><th>Waste Adj</th><th>Male Adj</th><th>Khalis</th><th>RP Wt</th><th>RP Amt</th><th>Casting Wt</th><th>Casting Amt</th><th>Effective</th><th></th></tr></thead><tbody id="calc-rows"></tbody></table></div><button type="button" class="btn-add-row" onclick="addCalcRow()"><i class="bi bi-plus-lg"></i> Add Gold Calculation Row</button></div>
+            <div class="form-section"><div class="section-header"><i class="bi bi-box-arrow-in-down"></i><h3>Gold Received Rows (optional)</h3></div><div id="receives-container"></div><button type="button" class="btn-add-row" onclick="addReceiveRow()"><i class="bi bi-plus-lg"></i> Add Received Row</button></div>
+            <div class="form-section"><div class="section-header"><i class="bi bi-chat-left-text"></i><h3>Remarks</h3></div><textarea name="remarks" class="form-control" rows="3"><?= htmlspecialchars($invoice['remarks'] ?? '') ?></textarea><div style="display:flex;gap:10px;margin-top:20px;"><button type="submit" class="btn btn-gold" name="action" value="save"><i class="bi bi-save"></i> Update</button><button type="submit" class="btn btn-success" name="action" value="print"><i class="bi bi-printer"></i> Update & Print</button><a href="<?= url('invoice-multiple/show.php?id='.$id) ?>" class="btn btn-outline"><i class="bi bi-x"></i> Cancel</a></div></div>
+        </div>
+        <div><div class="live-panel"><h3 style="font-family:Playfair Display,serif;color:var(--gold-primary);margin-bottom:16px;">Live Totals</h3><div class="live-row"><span>Casting</span><span class="live-value" id="t-casting">0.000 g</span></div><div class="live-row"><span>Waste</span><span class="live-value" id="t-waste">0.000 g</span></div><div class="live-row"><span>Total Weight</span><span class="live-value" id="t-total-weight">0.000 g</span></div><div class="live-row"><span>Male Waste</span><span class="live-value" id="t-male-waste">0.000 g</span></div><div class="live-row"><span>Gold Khalis</span><span class="live-value" id="t-khalis">0.000 g</span></div><div class="live-row"><span>Effective Given</span><span class="live-value" id="t-effective">0.000 g</span></div><div class="live-row"><span>Received Khalis</span><span class="live-value" id="t-received">0.000 g</span></div><div class="live-row"><span>Wasooli</span><input type="number" id="wasooli_visible" class="form-control" step="0.001" value="<?= htmlspecialchars($invoice['wasooli']) ?>" style="width:120px" oninput="document.getElementById('wasooli').value=this.value;calcLive();"></div><div class="live-row"><span>Previous Balance</span><span class="live-value" id="t-prev"><?= number_format($invoice['previous_balance'],3) ?> g</span></div><div class="total-box"><div style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;">Remaining Balance</div><div style="font-size:1.5rem;font-family:JetBrains Mono,monospace;font-weight:700;" id="t-remaining">0.000 g</div></div></div></div>
+    </div>
+</form>
+<script>
+let calcRowCount=0, recRowCount=0, previousBalance=<?= json_encode((float)$invoice['previous_balance']) ?>;
+const existingItems = <?= json_encode($existingItems) ?>;
+const existingReceives = <?= json_encode($existingReceives) ?>;
+function customRound2(v){let scaled=Math.round(v*1000), hundreds=Math.floor(scaled/10), rem=Math.abs(scaled)%10; return (rem>=8?(hundreds+1):hundreds)/100;} function fmt(v){return (Math.round(v*1000)/1000).toFixed(3);} function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+//function updateRattiRate(sel){const row=sel.closest('tr'), r=parseInt(sel.value)||0; let rate=.100; if(r===16) rate=.110; else if(r===17) rate=.120; else if(r>=18) rate=.150; row.querySelector('[name$="[ratti_rate]"]').value=rate.toFixed(3); calcLive();}
+function updateRattiRate(sel){
+    const row = sel.closest('tr');
+    const r = parseFloat(sel.value) || 0;
+    let rate = .100;
+
+    if (r >= 6 && r <= 15.9) {
+        rate = .100;
+    } else if (r >= 16 && r <= 16.9) {
+        rate = .110;
+    } else if (r >= 17 && r <= 17.9) {
+        rate = .120;
+    } else if (r >= 18 && r <= 24) {
+        rate = .150;
+    }
+
+    row.querySelector('[name$="[ratti_rate]"]').value = rate.toFixed(3);
+    calcLive();
+}
+function addCalcRow(data={}){const id=calcRowCount++; const rattiVal=parseFloat(data.ratti||11); document.getElementById('calc-rows').insertAdjacentHTML('beforeend',`<tr id="calc-row-${id}"><td><input class="form-control" type="date" name="items[${id}][item_date]" value="${data.item_date||document.querySelector('[name=invoice_date]')?.value||''}" oninput="calcLive()"></td><td><input class="form-control" type="text" name="items[${id}][description]" value="${esc(data.description||'')}"></td><td><input class="form-control" type="number" step="0.001" name="items[${id}][casting_weight]" value="${data.casting_weight||0}" oninput="calcLive()"></td><td><select class="form-control" name="items[${id}][ratti]" onchange="updateRattiRate(this)">${Array.from({length:37},(_,i)=>0+(i*0.5)).map(v=>{const label = (Math.abs(v - Math.round(v)) < 0.001) ? String(Math.round(v)) : v.toFixed(1);return `<option value="${label}" ${Math.abs(v - rattiVal) < 0.001 ? 'selected' : ''}>${label}</option>`;}).join('')}</select></td><td><input class="form-control" type="number" step="0.001" name="items[${id}][ratti_rate]" value="${data.ratti_rate||0.100}" oninput="calcLive()"></td><td class="mono waste">0.000</td><td class="mono total">0.000</td><td class="mono male">0.000</td><td><input class="form-control" type="number" step="0.001" name="items[${id}][waste_adjustment]" value="${data.waste_adjustment||0}" oninput="calcLive()" title="Waste adjustment +/-"></td><td><input class="form-control" type="number" step="0.001" name="items[${id}][male_waste_adjustment]" value="${data.male_waste_adjustment||0}" oninput="calcLive()" title="Male waste adjustment +/-"></td><td class="mono khalis">0.000</td><td><input class="form-control" type="number" step="0.001" name="items[${id}][rp_mazdori_weight]" value="${data.rp_mazdori_weight||0}" oninput="calcLive()"></td><td><input class="form-control" type="number" step="1" name="items[${id}][rp_mazdori_amount]" value="${data.rp_mazdori_amount||0}" oninput="calcLive()"></td><td><input class="form-control" type="number" step="0.001" name="items[${id}][casting_mazdori_weight]" value="${data.casting_mazdori_weight||0}" oninput="calcLive()"></td><td><input class="form-control" type="number" step="1" name="items[${id}][casting_mazdori_amount]" value="${data.casting_mazdori_amount||0}" oninput="calcLive()"></td><td class="mono effective" style="color:var(--gold-bright);font-weight:700;">0.000</td><td><button type="button" class="btn-remove-row" onclick="this.closest('tr').remove();calcLive();"><i class="bi bi-trash"></i></button></td></tr>`); calcLive();}
+function addReceiveRow(data={}){const id=recRowCount++; document.getElementById('receives-container').insertAdjacentHTML('beforeend',`<div class="receive-row" id="rec-row-${id}"><div class="form-group"><label style="font-size:.7rem;">Date</label><input type="date" name="receives[${id}][receive_date]" class="form-control" value="${data.receive_date||document.querySelector('[name=invoice_date]')?.value||''}"></div><div class="form-group"><label style="font-size:.7rem;">Description</label><input type="text" name="receives[${id}][description]" class="form-control" value="${esc(data.description||'')}"></div><div class="form-group"><label style="font-size:.7rem;">Gross Weight</label><input type="number" name="receives[${id}][gross_weight]" class="form-control" step="0.001" value="${data.gross_weight||0}" oninput="calcLive()"></div><div class="form-group"><label style="font-size:.7rem;">Ratti Impurity</label><input type="number" name="receives[${id}][ratti_impurity]" class="form-control" step="0.001" value="${data.ratti_impurity||0}" oninput="calcLive()"></div><div class="form-group"><label style="font-size:.7rem;">Khalis</label><input type="text" class="form-control rec-khalis" readonly value="0.000" style="color:var(--success);font-weight:600;"></div><button type="button" class="btn-remove-row" onclick="this.closest('.receive-row').remove();calcLive();"><i class="bi bi-trash"></i></button></div>`); calcLive();}
+function calcLive(){let totals={casting:0,waste:0,totalWeight:0,male:0,khalis:0,effective:0,received:0}; document.querySelectorAll('#calc-rows tr').forEach(row=>{const get=s=>parseFloat(row.querySelector(s)?.value)||0; const casting=get('[name$="[casting_weight]"]'), ratti=get('[name$="[ratti]"]'), rate=get('[name$="[ratti_rate]"]'), rp=get('[name$="[rp_mazdori_weight]"]'), cw=get('[name$="[casting_mazdori_weight]"]'); let waste=casting>0&&rate>0?customRound2((casting/10)*rate):0; const wasteAdj=get('[name$="[waste_adjustment]"]'); waste=Math.max(0, Math.round((waste+wasteAdj)*1000)/1000); let total=casting+waste; let male=total>0&&ratti>0?customRound2((total/96)*ratti):0; const maleAdj=get('[name$="[male_waste_adjustment]"]'); male=Math.max(0, Math.round((male+maleAdj)*1000)/1000); let khalis=Math.max(0,total-male); let eff=khalis+rp+cw; row.querySelector('.waste').textContent=fmt(waste); row.querySelector('.total').textContent=fmt(total); row.querySelector('.male').textContent=fmt(male); row.querySelector('.khalis').textContent=fmt(khalis); row.querySelector('.effective').textContent=fmt(eff); totals.casting+=casting; totals.waste+=waste; totals.totalWeight+=total; totals.male+=male; totals.khalis+=khalis; totals.effective+=eff; }); document.querySelectorAll('[id^="rec-row-"]').forEach(row=>{const gross=parseFloat(row.querySelector('[name$="[gross_weight]"]').value)||0, ratti=parseFloat(row.querySelector('[name$="[ratti_impurity]"]').value)||0; let k=0; if(gross>0) k=customRound2(gross-(gross/96*ratti)); row.querySelector('.rec-khalis').value=fmt(k); totals.received+=k;}); const wasooli=parseFloat(document.getElementById('wasooli').value)||0; const remaining=previousBalance+totals.effective-totals.received-wasooli; document.getElementById('t-casting').textContent=fmt(totals.casting)+' g'; document.getElementById('t-waste').textContent=fmt(totals.waste)+' g'; document.getElementById('t-total-weight').textContent=fmt(totals.totalWeight)+' g'; document.getElementById('t-male-waste').textContent=fmt(totals.male)+' g'; document.getElementById('t-khalis').textContent=fmt(totals.khalis)+' g'; document.getElementById('t-effective').textContent=fmt(totals.effective)+' g'; document.getElementById('t-received').textContent=fmt(totals.received)+' g'; document.getElementById('t-prev').textContent=fmt(previousBalance)+' g'; document.getElementById('t-remaining').textContent=fmt(remaining)+' g';}
+function updateCustomerBalance(customerId){ if(!customerId){previousBalance=0; document.getElementById('customer-info').style.display='none'; calcLive(); return;} const originalCustomer=<?= json_encode((int)$invoice['customer_id']) ?>; if(parseInt(customerId)===originalCustomer){ previousBalance=<?= json_encode((float)$invoice['previous_balance']) ?>; document.getElementById('last-balance-display').textContent=fmt(previousBalance)+' g'; document.getElementById('customer-info').style.display='block'; calcLive(); return; } fetch('<?= url('api/customer_balance.php') ?>?customer_id='+customerId).then(r=>r.json()).then(d=>{ previousBalance=parseFloat(d.current_balance ?? d.balance ?? d.opening_balance ?? 0)||0; document.getElementById('last-balance-display').textContent=fmt(previousBalance)+' g'; document.getElementById('customer-info').style.display='block'; calcLive();}).catch(()=>{const opt=document.querySelector('#customer_id option:checked'); previousBalance=parseFloat(opt?.dataset.opening||0)||0; document.getElementById('last-balance-display').textContent=fmt(previousBalance)+' g'; document.getElementById('customer-info').style.display='block'; calcLive();});}
+document.addEventListener('DOMContentLoaded',()=>{ if(existingItems.length){ existingItems.forEach(d=>addCalcRow(d)); } else { addCalcRow(); } existingReceives.forEach(d=>addReceiveRow(d)); calcLive(); });
+</script>
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
