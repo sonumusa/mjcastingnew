@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             setFlash('success', 'Welcome back, ' . $user['name'] . '!');
-            redirect('module_select.php');
+            redirect('backup_gate.php?event=login');
         } else {
             $error = 'Invalid email or password.';
         }

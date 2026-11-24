@@ -111,6 +111,11 @@
                 <span>Settings</span>
                 <span class="font-urdu nav-urdu">سیٹنگز</span>
             </a>
+            <a href="<?= url('backup.php') ?>" class="nav-item">
+                <i class="bi bi-database-down"></i>
+                <span>Database Backup</span>
+                <span class="font-urdu nav-urdu">ڈیٹا بیس بیک اپ</span>
+            </a>
             <a href="<?= url('sync-status.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'sync-status') !== false ? 'active' : '' ?>">
                 <i class="bi bi-arrow-repeat"></i>
                 <span>Sync Status</span>
