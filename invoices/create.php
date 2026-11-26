@@ -22,8 +22,12 @@ $extraCss = '<style>
     .calc-input-wrapper input { padding-right: 44px; }
     .unit-label { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.75rem; pointer-events: none; font-weight: 500; }
     .formula-hint { font-size: 0.7rem; color: var(--text-muted); margin-top: 6px; font-style: italic; }
-    .receive-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 48px; gap: 12px; align-items: end; margin-bottom: 12px; padding: 14px; background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); transition: all 0.2s ease; }
+    .receive-row { display: grid; grid-template-columns: 30px minmax(180px, 2fr) repeat(3, minmax(90px, 1fr)) 40px; gap: 8px; align-items: end; margin-bottom: 12px; padding: 14px; background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); transition: all 0.2s ease; }
+    .receive-row.has-return-casting { grid-template-columns: 30px minmax(120px, 1.5fr) repeat(6, minmax(70px, 1fr)) 40px; }
     .receive-row .form-group { margin-bottom: 0; }
+    .return-casting-toggle { display: flex; justify-content: center; margin: 0; cursor: pointer; }
+    .return-casting-fields { display: none; }
+    .return-casting-fields.active { display: contents; }
     .btn-add-row { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(16,185,129,0.12); color: var(--success); border: 1px dashed var(--success); border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
     .btn-add-row:hover { background: rgba(16,185,129,0.2); transform: translateY(-1px); }
     .btn-remove-row { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: rgba(244,63,94,0.1); color: var(--error); border: 1px solid rgba(244,63,94,0.2); border-radius: 8px; cursor: pointer; transition: all 0.2s ease; }
@@ -129,6 +133,11 @@ $extraCss = '<style>
     }
 
     @media (max-width: 1024px) { .invoice-grid { grid-template-columns: 1fr; } .live-panel { position: static; } }
+    @media (max-width: 760px) {
+        .receive-row, .receive-row.has-return-casting { grid-template-columns: 30px repeat(2, minmax(0, 1fr)); }
+        .receive-description { grid-column: span 2; }
+        .btn-remove-row { grid-column: 2; justify-self: end; }
+    }
 </style>';
 
 $db = getDB();
@@ -178,14 +187,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($receives as $rec) {
             $gross = parseDecimal($rec['gross_weight'] ?? 0);
             $rattiImpurity = parseDecimal($rec['ratti_impurity'] ?? 0);
-            if ($gross > 0) {
+            $returnCastingEnabled = !empty($rec['return_casting_enabled']);
+            $returnCastingWeight = $returnCastingEnabled ? max(0, parseDecimal($rec['return_casting_weight'] ?? 0)) : 0;
+            $returnRattiRate = $returnCastingEnabled ? max(0, parseDecimal($rec['return_ratti_rate'] ?? 0)) : 0;
+            $returnRpWeight = $returnCastingEnabled ? max(0, parseDecimal($rec['return_rp_weight'] ?? 0)) : 0;
+            if ($returnCastingEnabled) {
+                $returnWasteWeight = customRoundTo2(($returnCastingWeight / 10) * $returnRattiRate);
+                $gross = round($returnCastingWeight + $returnWasteWeight, 3);
+            }
+            $description = $rec['description'] ?? '';
+            if ($gross > 0 || $returnCastingEnabled || $description !== '') {
                 $khalis = convertToKhalis($gross, $rattiImpurity);
+                $inventoryKhalis = $returnCastingEnabled ? 0 : $khalis;
                 $totalReceivedKhalis += $khalis;
                 $receivesData[] = [
-                    'description' => $rec['description'] ?? '',
+                    'description' => $description,
                     'gross_weight' => $gross,
                     'ratti_impurity' => $rattiImpurity,
-                    'khalis_weight' => $khalis,
+                    'khalis_weight' => $inventoryKhalis,
+                    'return_casting_enabled' => $returnCastingEnabled ? 1 : 0,
+                    'return_casting_weight' => $returnCastingWeight,
+                    'return_ratti_rate' => $returnRattiRate,
+                    'return_rp_weight' => $returnRpWeight,
+                    'return_casting_khalis' => 0,
+                    'base_khalis' => $khalis,
                 ];
             }
         }
@@ -228,6 +253,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calc['male_waste'] = parseDecimal($maleWasteOverride);
     }
 
+    $totalReceivedKhalis = 0;
+    foreach ($receivesData as &$rec) {
+        if ($rec['return_casting_enabled']) {
+            $khalisAfterRatti = customRoundTo2($rec['base_khalis']);
+            $rowKhalis = round($khalisAfterRatti + $rec['return_rp_weight'], 3);
+            $rec['return_casting_khalis'] = $rowKhalis;
+        } else {
+            $rowKhalis = $rec['khalis_weight'];
+        }
+        $totalReceivedKhalis += $rowKhalis;
+        unset($rec['base_khalis']);
+    }
+    unset($rec);
+    $totalReceivedKhalis = round($totalReceivedKhalis, 3);
+
     // Recalculate downstream values after overrides
     $calc['gold_khalis'] = round($calc['total_weight'] - $calc['male_waste'], 3);
     $calc['effective_gold'] = round($calc['gold_khalis'] + $calc['rp_mazdori_weight'] + $calc['casting_mazdori_weight'], 3);
@@ -261,8 +301,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Create receive rows
         foreach ($receivesData as $rec) {
-            $stmt = $db->prepare("INSERT INTO invoice_receives (invoice_id, description, gross_weight, ratti_impurity, khalis_weight) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$invoiceId, $rec['description'], $rec['gross_weight'], $rec['ratti_impurity'], $rec['khalis_weight']]);
+            $stmt = $db->prepare("INSERT INTO invoice_receives (invoice_id, description, gross_weight, ratti_impurity, khalis_weight, return_casting_enabled, return_casting_weight, return_ratti_rate, return_rp_weight, return_casting_khalis) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$invoiceId, $rec['description'], $rec['gross_weight'], $rec['ratti_impurity'], $rec['khalis_weight'], $rec['return_casting_enabled'], $rec['return_casting_weight'], $rec['return_ratti_rate'], $rec['return_rp_weight'], $rec['return_casting_khalis']]);
         }
 
         // Recalculate balance chain
@@ -663,23 +703,50 @@ function adjustValue(id, delta) {
     calculateLive();
 }
 
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[char]));
+}
+
 function addReceiveRow(data = null) {
     const container = document.getElementById('receives-container');
     const rowId = receiveRowCount++;
     
-    const desc = data ? data.description || '' : '';
-    const gross = data ? data.gross_weight || 0 : 0;
+    const desc = data ? escapeHtml(data.description || '') : '';
+    const returnCastingEnabled = data ? Number(data.return_casting_enabled) === 1 : false;
+    const returnCastingWeight = data && Number(data.return_casting_enabled) === 1 ? Number(data.return_casting_weight || 0) : 0;
+    const gross = data ? Number(data.gross_weight || 0) : 0;
     const ratti = data ? data.ratti_impurity || 0 : 0;
+    const returnRattiRate = data ? data.return_ratti_rate || 0 : 0;
+    const returnRpWeight = data ? data.return_rp_weight || 0 : 0;
     
     const html = `
-        <div class="receive-row" id="receive-row-${rowId}">
-            <div class="form-group">
+        <div class="receive-row ${returnCastingEnabled ? 'has-return-casting' : ''}" id="receive-row-${rowId}">
+            <label class="return-casting-toggle" title="Return Casting">
+                <input type="checkbox" name="receives[${rowId}][return_casting_enabled]" value="1" aria-label="Return Casting" ${returnCastingEnabled ? 'checked' : ''} onchange="toggleReturnCasting(${rowId}, this.checked)">
+            </label>
+            <div class="form-group receive-description">
                 <label style="font-size:0.7rem;">Description</label>
                 <input type="text" name="receives[${rowId}][description]" class="form-control" placeholder="e.g., Old Jewelry" value="${desc}">
             </div>
+            <div class="return-casting-fields ${returnCastingEnabled ? 'active' : ''}" id="return-casting-fields-${rowId}">
+                <div class="form-group">
+                    <label style="font-size:0.7rem;">Return Casting (g)</label>
+                    <input type="number" name="receives[${rowId}][return_casting_weight]" class="form-control" min="0" step="0.001" value="${returnCastingWeight}" oninput="calculateLive()">
+                </div>
+                <div class="form-group">
+                    <label style="font-size:0.7rem;">Return Ratti Rate</label>
+                    <input type="number" name="receives[${rowId}][return_ratti_rate]" class="form-control" min="0" step="0.001" value="${returnRattiRate}" oninput="calculateLive()">
+                </div>
+                <div class="form-group">
+                    <label style="font-size:0.7rem;">Return RP Weight (g)</label>
+                    <input type="number" name="receives[${rowId}][return_rp_weight]" class="form-control" min="0" step="0.001" value="${returnRpWeight}" oninput="calculateLive()">
+                </div>
+            </div>
             <div class="form-group">
                 <label style="font-size:0.7rem;">Gross Weight (g)</label>
-                <input type="number" name="receives[${rowId}][gross_weight]" class="form-control" step="0.001" value="${gross}" oninput="calculateLive()">
+                <input type="number" name="receives[${rowId}][gross_weight]" class="form-control" step="0.001" value="${gross}" ${returnCastingEnabled ? 'readonly' : ''} oninput="calculateLive()">
             </div>
             <div class="form-group">
                 <label style="font-size:0.7rem;">Ratti Impurity</label>
@@ -696,6 +763,14 @@ function addReceiveRow(data = null) {
     `;
     
     container.insertAdjacentHTML('beforeend', html);
+    calculateLive();
+}
+
+function toggleReturnCasting(id, enabled) {
+    const fields = document.getElementById('return-casting-fields-' + id);
+    if (fields) fields.classList.toggle('active', enabled);
+    const row = document.getElementById('receive-row-' + id);
+    if (row) row.classList.toggle('has-return-casting', enabled);
     calculateLive();
 }
 
@@ -731,32 +806,6 @@ function calculateLive() {
     const wasteAdjustment = adjustmentEnabled ? (parseFloat(document.getElementById('waste-adjustment').value) || 0) : 0;
     const maleWasteAdjustment = adjustmentEnabled ? (parseFloat(document.getElementById('male-waste-adjustment').value) || 0) : 0;
     
-    // Calculate receive rows
-    let totalReceivedKhalis = 0;
-    document.querySelectorAll('[id^="receive-row-"]').forEach(row => {
-        const grossInput = row.querySelector('[name$="[gross_weight]"]');
-        const rattiInput = row.querySelector('[name$="[ratti_impurity]"]');
-        const display = row.querySelector('[id^="khalis-display-"]');
-        
-        if (grossInput && rattiInput && display) {
-            const gross = parseFloat(grossInput.value) || 0;
-            const rattiImp = parseFloat(rattiInput.value) || 0;
-            let khalis = 0;
-            if (gross > 0) {
-                khalis = khalisFromGross(gross, rattiImp);
-//                khalis = Math.round(khalis * 1000) / 1000;
-                khalis = customRound2(khalis);
-            }
-//            display.value = khalis.toFixed(3);
-            display.value = khalis.toFixed(3);
-            totalReceivedKhalis += khalis;
-        }
-    });
-    //totalReceivedKhalis = Math.round(totalReceivedKhalis * 1000) / 1000;
-    totalReceivedKhalis = customRound2(totalReceivedKhalis);
-    
-    document.getElementById('total_received_khalis').value = totalReceivedKhalis;
-    
     const previousBalance = parseFloat(document.getElementById('previous_balance').value) || 0;
     
     // 1. Waste Weight - apply custom rounding then add adjustment
@@ -783,6 +832,44 @@ function calculateLive() {
     // 4. Gold Khalis
     let goldKhalis = Math.round((totalWeight - finalMaleWaste) * 1000) / 1000;
     if (goldKhalis < 0) goldKhalis = 0; // Clamp to 0
+
+    let totalReceivedKhalis = 0;
+    document.querySelectorAll('[id^="receive-row-"]').forEach(row => {
+        const grossInput = row.querySelector('[name$="[gross_weight]"]');
+        const rattiInput = row.querySelector('[name$="[ratti_impurity]"]');
+        const returnEnabled = row.querySelector('[name$="[return_casting_enabled]"]').checked;
+        const returnWeightInput = row.querySelector('[name$="[return_casting_weight]"]');
+        const returnRateInput = row.querySelector('[name$="[return_ratti_rate]"]');
+        const returnRpInput = row.querySelector('[name$="[return_rp_weight]"]');
+        const display = row.querySelector('[id^="khalis-display-"]');
+
+        if (!grossInput || !rattiInput || !display) return;
+
+        let gross = parseFloat(grossInput.value) || 0;
+        const rattiImpurity = parseFloat(rattiInput.value) || 0;
+        const returnWeight = returnWeightInput ? parseFloat(returnWeightInput.value) || 0 : 0;
+        const returnRate = returnRateInput ? parseFloat(returnRateInput.value) || 0 : 0;
+        const returnRpWeight = returnRpInput ? parseFloat(returnRpInput.value) || 0 : 0;
+
+        if (returnEnabled) {
+            const returnWaste = customRound2((returnWeight / 10) * returnRate);
+            gross = Math.round((returnWeight + returnWaste) * 1000) / 1000;
+            grossInput.value = gross.toFixed(3);
+            grossInput.readOnly = true;
+        } else {
+            grossInput.readOnly = false;
+        }
+
+        let khalis = gross > 0 ? customRound2(khalisFromGross(gross, rattiImpurity)) : 0;
+        if (returnEnabled) {
+            khalis = Math.round((khalis + returnRpWeight) * 1000) / 1000;
+        }
+
+        display.value = khalis.toFixed(3);
+        totalReceivedKhalis += khalis;
+    });
+    totalReceivedKhalis = customRound2(totalReceivedKhalis);
+    document.getElementById('total_received_khalis').value = totalReceivedKhalis;
     
     // 5. RP Amount
     const rpAmount = Math.round(goldKhalis * rpRate * 100) / 100;

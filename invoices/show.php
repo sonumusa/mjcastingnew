@@ -147,6 +147,9 @@ require_once __DIR__ . '/../includes/header.php';
                 <tr>
                     <th>Description</th>
                     <th class="text-right">Gross Weight (g)</th>
+                    <th class="text-right">Return Casting (g)</th>
+                    <th class="text-right">Ratti Rate</th>
+                    <th class="text-right">RP Weight (g)</th>
                     <th class="text-right">Ratti Impurity</th>
                     <th class="text-right">Khalis Weight (g)</th>
                 </tr>
@@ -156,15 +159,21 @@ require_once __DIR__ . '/../includes/header.php';
                 <tr>
                     <td><?= htmlspecialchars($rec['description'] ?? '-') ?></td>
                     <td class="text-right mono"><?= number_format($rec['gross_weight'], 3) ?></td>
+                    <td class="text-right mono"><?= !empty($rec['return_casting_enabled']) ? number_format($rec['return_casting_weight'], 3) : '-' ?></td>
+                    <td class="text-right mono"><?= !empty($rec['return_casting_enabled']) ? number_format($rec['return_ratti_rate'], 3) : '-' ?></td>
+                    <td class="text-right mono"><?= !empty($rec['return_casting_enabled']) ? number_format($rec['return_rp_weight'], 3) : '-' ?></td>
                     <td class="text-right mono"><?= number_format($rec['ratti_impurity'], 3) ?></td>
-                    <td class="text-right mono" style="color:var(--success);font-weight:600;"><?= number_format($rec['khalis_weight'], 3) ?></td>
+                    <td class="text-right mono" style="color:var(--success);font-weight:600;"><?= number_format($rec['khalis_weight'] + ($rec['return_casting_khalis'] ?? 0), 3) ?></td>
                 </tr>
                 <?php endforeach; ?>
                 <tr style="font-weight:700;background:var(--bg-surface);">
                     <td>Total</td>
                     <td class="text-right mono"><?= number_format(array_sum(array_column($receives, 'gross_weight')), 3) ?></td>
                     <td></td>
-                    <td class="text-right mono" style="color:var(--success);"><?= number_format(array_sum(array_column($receives, 'khalis_weight')), 3) ?></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="text-right mono" style="color:var(--success);"><?= number_format(array_sum(array_column($receives, 'khalis_weight')) + array_sum(array_column($receives, 'return_casting_khalis')), 3) ?></td>
                 </tr>
             </tbody>
         </table>
