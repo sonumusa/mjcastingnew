@@ -148,7 +148,7 @@ Balance = Opening Balance + Effective Gold (Given) - Received (Khalis) - Wasooli
 - ✅ **Daily Reports**: Single date or date range
 - ✅ **Customer Reports**: Per party with date range
 - ✅ **CSV Export**: Export invoices to CSV
-- ✅ **Database Backup**: Download a SQL backup from the Database Backup menu; backups also download after login and logout
+- - ✅ **Database Backup**: Download a SQL backup from Settings; backups also download after login and logout
 - ✅ **Print Formats**: A5 and thermal slip (80mm)
 - ✅ **Dark Theme**: Premium UI with Urdu support
 - ✅ **Pagination**: All list views with search/filter

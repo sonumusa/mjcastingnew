@@ -28,14 +28,14 @@ $existingItems = $stmt->fetchAll();
 
 foreach ($existingItems as &$existingItem) {
     $baseWaste = 0;
-    if ((float)$existingItem['casting_weight'] > 0 && (float)$existingItem['ratti_rate'] > 0) {
-        $baseWaste = customRoundTo2(((float)$existingItem['casting_weight'] / 10) * (float)$existingItem['ratti_rate']);
+    if ((float)$existingItem['casting_weight'] != 0 && (float)$existingItem['ratti_rate'] != 0) {
+        $baseWaste = imRound2(((float)$existingItem['casting_weight'] / 10) * (float)$existingItem['ratti_rate']);
     }
     $existingItem['waste_adjustment'] = round((float)$existingItem['waste_weight'] - $baseWaste, 3);
 
     $baseMale = 0;
-    if ((float)$existingItem['total_weight'] > 0 && (float)$existingItem['ratti'] > 0) {
-        $baseMale = customRoundTo2(((float)$existingItem['total_weight'] / 96) * (float)$existingItem['ratti']);
+    if ((float)$existingItem['total_weight'] != 0 && (float)$existingItem['ratti'] != 0) {
+        $baseMale = imRound2(((float)$existingItem['total_weight'] / 96) * (float)$existingItem['ratti']);
     }
     $existingItem['male_waste_adjustment'] = round((float)$existingItem['male_waste'] - $baseMale, 3);
 }
@@ -45,7 +45,9 @@ $stmt = $db->prepare("SELECT * FROM invoice_multiple_receives WHERE invoice_mult
 $stmt->execute([$id]);
 $existingReceives = $stmt->fetchAll();
 
-$customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status='active' ORDER BY name")->fetchAll();
+$customers = imLoadParties($db);
+$partyJs = imPartyJs($customers);
+$hasPartyType = (bool) imPartyTypeColumn($db);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireCsrf();
@@ -70,8 +72,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($items as $it) {
             $itemDate = !empty($it['item_date'] ?? '') ? $it['item_date'] : $invoiceDate;
             $casting = parseDecimal($it['casting_weight'] ?? 0);
-            if ($casting <= 0) continue;
-
             $ratti = parseDecimal($it['ratti'] ?? 0);
             $rate = parseDecimal($it['ratti_rate'] ?? 0);
             $rpW = parseDecimal($it['rp_mazdori_weight'] ?? 0);
@@ -81,38 +81,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $wasteAdj = parseDecimal($it['waste_adjustment'] ?? 0);
             $maleAdj = parseDecimal($it['male_waste_adjustment'] ?? 0);
 
-            $calc = calculateGold([
-                'casting_weight' => $casting,
-                'ratti' => $ratti,
-                'ratti_rate' => $rate,
-                'rp_mazdori_weight' => $rpW,
-                'casting_mazdori_weight' => $castW,
-                'total_received_khalis' => 0,
-                'previous_balance' => 0,
-                'wasooli' => 0
-            ]);
-
-            if ($wasteAdj != 0 || $maleAdj != 0) {
-                $calc['waste_weight'] = max(0, round($calc['waste_weight'] + $wasteAdj, 3));
-                $calc['total_weight'] = round($calc['casting_weight'] + $calc['waste_weight'], 3);
-                $calc['male_waste'] = max(0, round($calc['male_waste'] + $maleAdj, 3));
-                $calc['gold_khalis'] = max(0, round($calc['total_weight'] - $calc['male_waste'], 3));
-                $calc['effective_gold'] = round($calc['gold_khalis'] + $calc['rp_mazdori_weight'] + $calc['casting_mazdori_weight'], 3);
+            // Casting RETURN allowed: negative casting is a valid row.
+            // Only completely empty rows are skipped.
+            if ($casting == 0 && $rpW == 0 && $rpAmt == 0 && $castW == 0 && $castAmt == 0 && $wasteAdj == 0 && $maleAdj == 0) {
+                continue;
             }
+
+            $calc = imCalcRow($casting, $ratti, $rate, $rpW, $castW, $wasteAdj, $maleAdj);
 
             $row = [
                 'item_date' => $itemDate,
                 'description' => $it['description'] ?? '',
-                'casting_weight' => $calc['casting_weight'],
-                'ratti' => $calc['ratti'],
-                'ratti_rate' => $calc['ratti_rate'],
+                'casting_weight' => $casting,
+                'ratti' => $ratti,
+                'ratti_rate' => $rate,
                 'waste_weight' => $calc['waste_weight'],
                 'total_weight' => $calc['total_weight'],
                 'male_waste' => $calc['male_waste'],
                 'gold_khalis' => $calc['gold_khalis'],
-                'rp_mazdori_weight' => $calc['rp_mazdori_weight'],
+                'rp_mazdori_weight' => $rpW,
                 'rp_mazdori_amount' => $rpAmt,
-                'casting_mazdori_weight' => $calc['casting_mazdori_weight'],
+                'casting_mazdori_weight' => $castW,
                 'casting_mazdori_amount' => $castAmt,
                 'effective_gold' => $calc['effective_gold']
             ];
@@ -129,11 +118,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tot['cast_amt'] += $row['casting_mazdori_amount'];
             $tot['effective'] += $row['effective_gold'];
         }
-    }
-
-    if (empty($itemRows)) {
-        setFlash('error', 'Please add at least one Gold Calculation row with casting weight.');
-        back();
     }
 
     $receives = post('receives', []);
@@ -156,6 +140,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
             $totalReceived += $khalis;
         }
+    }
+
+    // Invoice can be saved with ONLY received rows (casting no longer compulsory).
+    if (empty($itemRows) && empty($receiveRows)) {
+        setFlash('error', 'Please add at least one Gold Calculation row or one Gold Received row.');
+        back();
     }
 
     $totalReceived = round($totalReceived, 3);
@@ -207,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         setFlash('success', "Multiple Invoice {$invoice['invoice_no']} updated successfully.");
         if (post('action') === 'print') redirect('invoice-multiple/print.php?id=' . $id);
-        redirect('invoice-multiple/show.php?id=' . $id);
+        redirect('invoice-multiple/index.php');
     } catch (Exception $e) {
         $db->rollBack();
         setFlash('error', 'Failed to update multiple invoice: ' . $e->getMessage());
@@ -225,6 +215,10 @@ $extraCss = '<style>
 .table-container { overflow-x: auto; width: 100%; }
 .calc-table { min-width: 1650px; }
 .calc-table input, .calc-table select { min-width: 85px; }
+/* Hide number input up/down spinner arrows (not used) */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .btn-add-row { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: rgba(16,185,129,.12); color: var(--success); border: 1px dashed var(--success); border-radius: 10px; cursor: pointer; font-weight: 600; font-size: .85rem; }
 .btn-remove-row { width: 34px; height: 34px; background: rgba(244,63,94,.1); color: var(--error); border: 1px solid rgba(244,63,94,.2); border-radius: 8px; cursor: pointer; }
 .live-panel { background: var(--bg-card); border: 1px solid var(--gold-primary); border-radius: 16px; padding: 22px; box-shadow: var(--shadow-3); }
@@ -265,7 +259,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="input-grid">
                     <div class="form-group full-width">
                         <label>Invoice Type</label>
-                        <select name="invoice_type" class="form-control">
+                        <select name="invoice_type" id="invoice_type" class="form-control" onchange="filterParties()">
                             <option value="customer" <?= $invoice['invoice_type'] === 'customer' ? 'selected' : '' ?>>Customer</option>
                             <option value="dukandar" <?= $invoice['invoice_type'] === 'dukandar' ? 'selected' : '' ?>>Dukandar</option>
                             <option value="karigar" <?= $invoice['invoice_type'] === 'karigar' ? 'selected' : '' ?>>Karigar</option>
@@ -275,9 +269,6 @@ require_once __DIR__ . '/../includes/header.php';
                         <label>Party</label>
                         <select name="customer_id" id="customer_id" class="form-control" required onchange="updateCustomerBalance(this.value)">
                             <option value="">Select Party</option>
-                            <?php foreach ($customers as $c): ?>
-                                <option value="<?= $c['id'] ?>" data-opening="<?= $c['opening_balance'] ?>" <?= $invoice['customer_id'] == $c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
-                            <?php endforeach; ?>
                         </select>
                         <div id="customer-info" style="display:block;background:var(--bg-surface);border:1px solid var(--gold-muted);padding:12px 16px;border-radius:10px;margin-top:12px;">
                             <span class="text-muted">Previous Sabqa Balance: </span>
@@ -311,7 +302,7 @@ require_once __DIR__ . '/../includes/header.php';
                             <tr>
                                 <th>Date</th>
                                 <th>Description</th>
-                                <th>Casting</th>
+                                <th>Casting <small style="opacity:.65;font-weight:400;">(&minus; = return)</small></th>
                                 <th>Ratti</th>
                                 <th>Ratti Rate</th>
                                 <th>Waste</th>
@@ -424,11 +415,18 @@ require_once __DIR__ . '/../includes/header.php';
 <script>
 let calcRowCount = 0, recRowCount = 0, previousBalance = <?= json_encode((float)$invoice['previous_balance']) ?>;
 const existingItems = <?= json_encode($existingItems) ?>;
+const allParties = <?= json_encode($partyJs) ?>;
+const partyTypeColumnExists = <?= $hasPartyType ? 'true' : 'false' ?>;
+const lockedPartyId = <?= (int) $invoice['customer_id'] ?>; // invoice ki apni party hamesha list me rahegi
+const preselectParty = <?= (int) $invoice['customer_id'] ?>;
 const existingReceives = <?= json_encode($existingReceives) ?>;
 
 function customRound2(v) {
-    let scaled = Math.round(v * 1000), hundreds = Math.floor(scaled / 10), rem = Math.abs(scaled) % 10;
-    return (rem >= 8 ? (hundreds + 1) : hundreds) / 100;
+    // Sign safe: casting return (negative values) ko bhi theek round karta hai
+    const sign = v < 0 ? -1 : 1;
+    const a = Math.abs(v);
+    let scaled = Math.round(a * 1000), hundreds = Math.floor(scaled / 10), rem = scaled % 10;
+    return sign * ((rem >= 8 ? (hundreds + 1) : hundreds) / 100);
 }
 
 function fmt(v) {
@@ -447,6 +445,8 @@ function getToday() {
 function updateRattiRate(sel) {
     const row = sel.closest('tr');
     const r = parseFloat(sel.value) || 0;
+    const isDukandar = document.getElementById('invoice_type').value === 'dukandar';
+    const rateInput = row.querySelector('[name$="[ratti_rate]"]');
     let rate = .100;
 
     if (r >= 6 && r <= 15.9) {
@@ -471,19 +471,40 @@ function updateRattiRate(sel) {
         rate = .220;
     }
 
-    row.querySelector('[name$="[ratti_rate]"]').value = rate.toFixed(3);
+    rateInput.dataset.nonDukandarRate = rate.toFixed(3);
+    rateInput.value = (isDukandar ? 0 : rate).toFixed(3);
+    calcLive();
+}
+
+function updateRatesForInvoiceType() {
+    const isDukandar = document.getElementById('invoice_type').value === 'dukandar';
+    document.querySelectorAll('#calc-rows tr').forEach(row => {
+        const ratti = parseFloat(row.querySelector('[name$="[ratti]"]').value) || 0;
+        const rateInput = row.querySelector('[name$="[ratti_rate]"]');
+        const wasDukandar = rateInput.dataset.isDukandar === 'true';
+        if (isDukandar && !wasDukandar) {
+            rateInput.dataset.nonDukandarRate = rateInput.value;
+            rateInput.value = '0.000';
+        } else if (!isDukandar && wasDukandar) {
+            rateInput.value = rateInput.dataset.nonDukandarRate || rateInput.value;
+        }
+        rateInput.dataset.isDukandar = String(isDukandar);
+    });
     calcLive();
 }
 
 function addCalcRow(data = {}) {
     const id = calcRowCount++;
     const rattiVal = parseFloat(data.ratti || 11);
+    const isDukandar = document.getElementById('invoice_type').value === 'dukandar';
+    const rate = data.ratti_rate || 0.100;
+    const displayedRate = isDukandar ? 0 : rate;
     document.getElementById('calc-rows').insertAdjacentHTML('beforeend', `<tr id="calc-row-${id}">
         <td><input class="form-control" type="date" name="items[${id}][item_date]" value="${data.item_date || getToday()}" oninput="calcLive()"></td>
         <td><input class="form-control" type="text" name="items[${id}][description]" value="${esc(data.description || '')}"></td>
         <td><input class="form-control" type="number" step="0.001" name="items[${id}][casting_weight]" value="${data.casting_weight || 0}" oninput="calcLive()"></td>
         <td><select class="form-control" name="items[${id}][ratti]" onchange="updateRattiRate(this)">${Array.from({length: 49}, (_, i) => 0 + (i * 0.5)).map(v => { const label = (Math.abs(v - Math.round(v)) < 0.001) ? String(Math.round(v)) : v.toFixed(1); return `<option value="${label}" ${Math.abs(v - rattiVal) < 0.001 ? 'selected' : ''}>${label}</option>`; }).join('')}</select></td>
-        <td><input class="form-control" type="number" step="0.001" name="items[${id}][ratti_rate]" value="${data.ratti_rate || 0.100}" oninput="calcLive()"></td>
+        <td><input class="form-control" type="number" step="0.001" name="items[${id}][ratti_rate]" value="${displayedRate}" data-non-dukandar-rate="${rate}" data-is-dukandar="${isDukandar}" oninput="calcLive()"></td>
         <td class="mono waste">0.000</td>
         <td class="mono total">0.000</td>
         <td class="mono male">0.000</td>
@@ -491,7 +512,7 @@ function addCalcRow(data = {}) {
         <td><input class="form-control" type="number" step="0.001" name="items[${id}][male_waste_adjustment]" value="${data.male_waste_adjustment || 0}" oninput="calcLive()" title="Male waste adjustment +/-"></td>
         <td class="mono khalis">0.000</td>
         <td><input class="form-control" type="number" step="0.001" name="items[${id}][rp_mazdori_weight]" value="${data.rp_mazdori_weight || 0}" oninput="calcLive()"></td>
-        <td><input class="form-control" type="number" step="1" name="items[${id}][rp_mazdori_amount]" value="${data.rp_mazdori_amount || 0}" oninput="calcLive()"></td>
+        <td><input class="form-control" type="number" step="1" name="items[${id}][rp_mazdori_amount]" value="${data.rp_mazdori_amount || 0}" oninput="syncRowRpWeight(this)"></td>
         <td><input class="form-control" type="number" step="0.001" name="items[${id}][casting_mazdori_weight]" value="${data.casting_mazdori_weight || 0}" oninput="calcLive()"></td>
         <td><input class="form-control" type="number" step="1" name="items[${id}][casting_mazdori_amount]" value="${data.casting_mazdori_amount || 0}" oninput="calcLive()"></td>
         <td class="mono effective" style="color:var(--gold-bright);font-weight:700;">0.000</td>
@@ -513,27 +534,79 @@ function addReceiveRow(data = {}) {
     calcLive();
 }
 
+
+/* Khalis = gross se khalis weight.
+   ratti >= 0 -> purana formula: gross - (gross/96 * ratti)   [LESS]
+   ratti <  0 -> "P Add": point = |ratti|, value = gross/(96-point)*point, khalis = gross + value  [ADD] */
+function khalisFromGross(gross, ratti) {
+    if (gross <= 0) return 0;
+    if (ratti < 0) {
+        const p = Math.abs(ratti), d = 96 - p;
+        if (d <= 0) return gross;
+        return gross + (gross / d) * p;
+    }
+    return gross - (gross / 96 * ratti);
+}
+
+
+/* ---------- RP Amount -> RP Weight (settings ke Default RP Rate se) ----------
+   qty = amount * 11.664 / default_rp_rate
+   Rate 0 ya set na ho to auto-calc OFF rehta hai (weight ko haath nahi lagta). */
+const RP_TOLA_GRAMS = <?= json_encode(IM_TOLA_GRAMS) ?>;
+const RP_DEFAULT_RATE = <?= json_encode(imDefaultRpRate()) ?>;
+
+/* RP weight ko 2 decimal par laata hai.
+   Teesra decimal >= 7 ho to upar, warna cut.
+   0.2638 -> 0.26   |   0.267 -> 0.27 */
+function rpRound2(v) {
+    const sign = v < 0 ? -1 : 1;
+    const scaled = Math.round(Math.abs(v) * 1000);
+    const hundreds = Math.floor(scaled / 10);
+    const rem = scaled % 10;
+    return sign * ((rem >= 7 ? hundreds + 1 : hundreds) / 100);
+}
+
+function rpWeightFromAmount(amount) {
+    if (!RP_DEFAULT_RATE || RP_DEFAULT_RATE <= 0) return null;
+    amount = parseFloat(amount) || 0;
+    return rpRound2(amount * RP_TOLA_GRAMS / RP_DEFAULT_RATE);
+}
+
+/* Row ke RP Amount se usi row ka RP Weight bhar deta hai */
+function syncRowRpWeight(input) {
+    const row = input.closest('tr');
+    const w = rpWeightFromAmount(input.value);
+    if (w !== null) {
+        const wEl = row.querySelector('[name$="[rp_mazdori_weight]"]');
+        if (wEl) wEl.value = w.toFixed(2);
+    }
+    calcLive();
+}
+
 function calcLive() {
     let totals = {casting: 0, waste: 0, totalWeight: 0, male: 0, khalis: 0, effective: 0, received: 0};
 
     document.querySelectorAll('#calc-rows tr').forEach(row => {
         const get = s => parseFloat(row.querySelector(s)?.value) || 0;
         const casting = get('[name$="[casting_weight]"]'), ratti = get('[name$="[ratti]"]'), rate = get('[name$="[ratti_rate]"]'), rp = get('[name$="[rp_mazdori_weight]"]'), cw = get('[name$="[casting_mazdori_weight]"]');
-        let waste = casting > 0 && rate > 0 ? customRound2((casting / 10) * rate) : 0;
+        // no max(0) clamps -> casting return (negative) allowed
+        let waste = (casting !== 0 && rate !== 0) ? customRound2((casting / 10) * rate) : 0;
         const wasteAdj = get('[name$="[waste_adjustment]"]');
-        waste = Math.max(0, Math.round((waste + wasteAdj) * 1000) / 1000);
-        let total = casting + waste;
-        let male = total > 0 && ratti > 0 ? customRound2((total / 96) * ratti) : 0;
+        waste = Math.round((waste + wasteAdj) * 1000) / 1000;
+        let total = Math.round((casting + waste) * 1000) / 1000;
+        let male = (total !== 0 && ratti !== 0) ? customRound2((total / 96) * ratti) : 0;
         const maleAdj = get('[name$="[male_waste_adjustment]"]');
-        male = Math.max(0, Math.round((male + maleAdj) * 1000) / 1000);
-        let khalis = Math.max(0, total - male);
-        let eff = khalis + rp + cw;
+        male = Math.round((male + maleAdj) * 1000) / 1000;
+        let khalis = Math.round((total - male) * 1000) / 1000;
+        let eff = Math.round((khalis + rp + cw) * 1000) / 1000;
 
         row.querySelector('.waste').textContent = fmt(waste);
         row.querySelector('.total').textContent = fmt(total);
         row.querySelector('.male').textContent = fmt(male);
         row.querySelector('.khalis').textContent = fmt(khalis);
-        row.querySelector('.effective').textContent = fmt(eff);
+        const effCell = row.querySelector('.effective');
+        effCell.textContent = fmt(eff);
+        effCell.style.color = (eff < 0) ? 'var(--error)' : 'var(--gold-bright)';
 
         totals.casting += casting;
         totals.waste += waste;
@@ -547,7 +620,7 @@ function calcLive() {
         const gross = parseFloat(row.querySelector('[name$="[gross_weight]"]').value) || 0,
               ratti = parseFloat(row.querySelector('[name$="[ratti_impurity]"]').value) || 0;
         let k = 0;
-        if (gross > 0) k = customRound2(gross - (gross / 96 * ratti));
+        if (gross > 0) k = customRound2(khalisFromGross(gross, ratti));
         row.querySelector('.rec-khalis').value = fmt(k);
         totals.received += k;
     });
@@ -564,6 +637,46 @@ function calcLive() {
     document.getElementById('t-received').textContent = fmt(totals.received) + ' g';
     document.getElementById('t-prev').textContent = fmt(previousBalance) + ' g';
     document.getElementById('t-remaining').textContent = fmt(remaining) + ' g';
+}
+
+
+/* ---------- Party list filtering by Invoice Type ---------- */
+function normType(t) {
+    t = String(t || '').toLowerCase().trim();
+    if (['dukandar', 'dukaandar', 'dukan', 'shopkeeper', 'shop', 'dealer'].indexOf(t) !== -1) return 'dukandar';
+    if (['karigar', 'kareegar', 'kaarigar', 'worker', 'artisan', 'maker'].indexOf(t) !== -1) return 'karigar';
+    if (['customer', 'client', 'party', 'grahak'].indexOf(t) !== -1) return 'customer';
+    return t;
+}
+
+function filterParties(forceSelectId) {
+    const sel = document.getElementById('customer_id');
+    const typeSel = document.getElementById('invoice_type');
+    if (!sel || !typeSel) return;
+
+    const want = normType(typeSel.value);
+    const keep = (forceSelectId !== undefined && forceSelectId !== null && forceSelectId !== '')
+        ? String(forceSelectId) : String(sel.value || '');
+
+    let list = allParties;
+    if (partyTypeColumnExists) {
+        list = allParties.filter(p => normType(p.type) === want || String(p.id) === String(lockedPartyId));
+    }
+
+    let html = '<option value="">Select Party</option>';
+    list.forEach(p => {
+        html += '<option value="' + p.id + '" data-opening="' + p.opening + '"' +
+                (String(p.id) === keep ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+    });
+    if (!list.length) {
+        html += '<option value="" disabled>No ' + want + ' party found - set party type in Customers</option>';
+    }
+    sel.innerHTML = html;
+
+    if (String(sel.value || '') !== keep) {
+        updateCustomerBalance(sel.value);
+    }
+    updateRatesForInvoiceType();
 }
 
 function updateCustomerBalance(customerId) {
@@ -598,7 +711,14 @@ function updateCustomerBalance(customerId) {
         });
 }
 
+document.addEventListener('wheel', function (e) {
+    if (document.activeElement && document.activeElement.type === 'number' && document.activeElement === e.target) {
+        document.activeElement.blur();
+    }
+}, { passive: true });
+
 document.addEventListener('DOMContentLoaded', () => {
+    filterParties(preselectParty || '');
     if (existingItems.length) {
         existingItems.forEach(d => addCalcRow(d));
     } else {

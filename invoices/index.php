@@ -164,8 +164,8 @@ require_once __DIR__ . '/../includes/header.php';
                     <td class="text-center" style="white-space:nowrap;">
                         <a href="<?= url('invoices/show.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="View"><i class="bi bi-eye"></i></a>
                         <a href="<?= url('invoices/edit.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Edit"><i class="bi bi-pencil"></i></a>
-                        <a href="<?= url('invoices/print.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Print"><i class="bi bi-printer"></i></a>
-                        <a href="<?= url('invoices/print1.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Receipt"><i class="bi bi-receipt"></i></a>
+                        <a href="<?= url('invoices/print2.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Receipt"><i class="bi bi-receipt"></i></a>
+                        <a href="<?= url('invoices/print1.php?id=' . $inv['id']) ?>" class="btn btn-sm btn-outline" title="Print"><i class="bi bi-printer"></i></a>
                         <?php if ($inv['status'] === 'active'): ?>
                             <a href="<?= url('invoices/delete.php?id=' . $inv['id']) ?>" 
                                class="btn btn-sm btn-danger" 

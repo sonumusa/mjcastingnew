@@ -46,6 +46,23 @@ function mpRatti($value): string {
     $v = (float)$value;
     return abs($v - round($v)) < 0.0001 ? number_format($v, 0) : number_format($v, 1);
 }
+/**
+ * Ratti cell ka text.
+ * WASOOLI (سونا وصول) rows me ratti NEGATIVE ho sakti hai -> us se khalis weight barhta hai.
+ * Aise case me ratti ko 100 se multiply kar ke "P Add" ke sath dikhate hain:
+ *   -1    -> "100 P Add"
+ *   -0.3  -> "30 P Add"
+ * Baqi sab jagah: ratti > 0 -> number, ratti = 0 -> "خالص".
+ */
+function mpRattiCell(float $ratti, bool $isReceive): string {
+    if ($isReceive && $ratti < -0.0001) {
+        return mpRatti(round(abs($ratti) * 100, 0)) . ' P Add';
+    }
+    if (abs($ratti) > 0.0001) {
+        return mpRatti($ratti);
+    }
+    return 'خالص';
+}
 function mpBalanceWord($value): string {
     $v = (float)$value;
     if ($v > 0.0005) return 'لینا';
@@ -64,24 +81,51 @@ function mpAmount($value): string {
 
 $sequence = [];
 foreach ($items as $it) {
+    $eff = (float)$it['effective_gold'];
+    $isReturn = $eff < 0;                       // CASTING WAPSI
+    $isPureGold = abs((float)$it['ratti']) < 0.0001;  // ratti = 0 -> khalis sona diya
+
+    if ($isReturn) {
+        // Wapsi: minus sign nahi dikhana. Positive value WASOOLI column me jati hai.
+        $label = 'کاسٹنگ واپسی';
+        $badge = 'returned';
+        $text  = 'returned-text';
+        $plain = 'کاریگر سے کاسٹنگ واپس آئی';
+    } elseif ($isPureGold) {
+        // Ratti = 0 -> khalis sona diya gaya
+        $label = 'سونا دیا';
+        $badge = 'puregold';
+        $text  = 'puregold-text';
+        $plain = 'ہم نے کاریگر کو خالص سونا دیا';
+    } else {
+        // Ratti > 0 -> casting kaam diya gaya
+        $label = 'کاسٹنگ';
+        $badge = 'given';
+        $text  = 'given-text';
+        $plain = 'ہم نے کاریگر کو کاسٹنگ دی';
+    }
+
     $sequence[] = [
         'date' => $it['row_date'] ?: $invoice['invoice_date'],
         'sort' => strtotime($it['row_date'] ?: $invoice['invoice_date']) . '-1-' . str_pad((string)$it['id'], 8, '0', STR_PAD_LEFT),
-        'kind' => 'given',
-        'urdu_label' => 'سونا دیا',
-        'simple_text' => 'ہم نے کاریگر کو سونا دیا',
+        'kind' => $isReturn ? 'returned' : 'given',
+        'is_receive' => false,
+        'badge_class' => $badge,
+        'text_class' => $text,
+        'urdu_label' => $label,
+        'simple_text' => $plain,
         'description' => $it['description'] ?: '-',
-        'main_weight' => (float)$it['casting_weight'],
+        // Wapsi rows par sab weights positive dikhte hain (minus sign hata diya)
+        'main_weight' => $isReturn ? abs((float)$it['casting_weight']) : (float)$it['casting_weight'],
         'ratti' => (float)$it['ratti'],
         'khalis' => (float)$it['gold_khalis'],
-        'rp_weight' => (float)($it['rp_mazdori_weight'] ?? 0),
-        // NOTE: guessing the column name here as "rp_mazdori_amount" to match
-        // the existing "rp_mazdori_weight" column. If your real column has a
-        // different name, change it on the line below.
-        'rp_amount' => (float)($it['rp_mazdori_amount'] ?? 0),
-        'casting_mazdori_weight' => (float)($it['casting_mazdori_weight'] ?? 0),
-        'given' => (float)$it['effective_gold'],
-        'received' => 0.0,
+        'rp_weight' => $isReturn ? abs((float)($it['rp_mazdori_weight'] ?? 0)) : (float)($it['rp_mazdori_weight'] ?? 0),
+        'rp_amount' => $isReturn ? abs((float)($it['rp_mazdori_amount'] ?? 0)) : (float)($it['rp_mazdori_amount'] ?? 0),
+        'casting_mazdori_weight' => $isReturn ? abs((float)($it['casting_mazdori_weight'] ?? 0)) : (float)($it['casting_mazdori_weight'] ?? 0),
+        // Wapsi ko WASOOLI side par rakha hai -> balance ki math bilkul wahi rehti hai
+        // (pehle: given = -X, received = 0  |  ab: given = 0, received = +X)
+        'given' => $isReturn ? 0.0 : $eff,
+        'received' => $isReturn ? abs($eff) : 0.0,
     ];
 }
 foreach ($receives as $r) {
@@ -89,6 +133,9 @@ foreach ($receives as $r) {
         'date' => $r['row_date'] ?: $invoice['invoice_date'],
         'sort' => strtotime($r['row_date'] ?: $invoice['invoice_date']) . '-2-' . str_pad((string)$r['id'], 8, '0', STR_PAD_LEFT),
         'kind' => 'received',
+        'is_receive' => true,
+        'badge_class' => 'received',
+        'text_class' => 'received-text',
         'urdu_label' => 'سونا وصول',
         'simple_text' => 'کاریگر سے سونا واپس وصول کیا',
         'description' => $r['description'] ?: '-',
@@ -116,8 +163,8 @@ $totalReceived = array_sum(array_column($sequence, 'received'));
 $wasooli = (float)($invoice['wasooli'] ?? 0);
 $finalBalance = round((float)$invoice['previous_balance'] + $totalGiven - $totalReceived - $wasooli, 3);
 
-$showRpWeight = array_sum(array_column($sequence, 'rp_weight')) > 0.0005;
-$showCastingMazdoriWeight = array_sum(array_column($sequence, 'casting_mazdori_weight')) > 0.0005;
+$showRpWeight = array_sum(array_map('abs', array_column($sequence, 'rp_weight'))) > 0.0005;
+$showCastingMazdoriWeight = array_sum(array_map('abs', array_column($sequence, 'casting_mazdori_weight'))) > 0.0005;
 // Columns now: تاریخ, کام, تفصیل, وزن, رتی, [آر پی وزن, آر پی اماؤنٹ], [کاسٹنگ مزدوری وزن], سونا دیا, سونا وصول, باقی حساب
 $totalColumns = 8 + ($showRpWeight ? 2 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
 $middleColspan = 3 + ($showRpWeight ? 2 : 0) + ($showCastingMazdoriWeight ? 1 : 0);
@@ -179,7 +226,7 @@ body {
 .title-strip .urdu { font-size:11px; }
 
 /* Plain-language legend box, so a non-reader can match colors to meaning */
-.legend { border:2px solid #1f4e79; background:#eaf3ff; padding:6px 8px; margin:6px 0; font-weight:700; font-size:10px; text-align:center; display:flex; justify-content:space-around; flex-wrap:wrap; gap:4px; }
+.legend { border:2px solid #1f4e79; background:#eaf3ff; padding:6px 8px; margin:6px 0; font-weight:700; font-size:13px; text-align:center; display:flex; justify-content:space-around; flex-wrap:wrap; gap:4px; }
 .legend span { display:inline-flex; align-items:center; gap:4px; }
 .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
 .legend .dot.given { background:#b91c1c; }
@@ -199,23 +246,27 @@ table { width:100%; border-collapse:collapse; }
    possible and more rows fit per printed page. */
 .hisab-table th {
     background:#d9b14a; color:#000; border:1.5px solid #000;
-    padding:2px 3px; font-size:9px; text-align:center;
+    padding:2px 3px; font-size:12px; text-align:center;
     white-space:nowrap; line-height:1.8;
 }
 .hisab-table td {
-    border:1px solid #000; padding:1px 3px; font-size:9px;
+    border:1px solid #000; padding:1px 3px; font-size:12px;
     vertical-align:middle; white-space:nowrap; line-height:2.15;
 }
 .hisab-table tbody tr:nth-child(even) { background:#f8f8f8; }
 .badge { display:inline-block; padding:1px 6px; border-radius:4px; color:#fff; font-weight:800; min-width:56px; text-align:center; font-size:9px; white-space:nowrap; }
-.badge.given { background:#b91c1c; }
-.badge.received { background:#047857; }
+.badge.given { background:#b91c1c; }      /* کاسٹنگ  (ratti > 0)  - laal */
+.badge.puregold { background:#1d4ed8; }   /* سونا دیا (ratti = 0)  - neela */
+.badge.returned { background:#6d28d9; }   /* کاسٹنگ واپسی          - purple */
+.badge.received { background:#047857; }   /* سونا وصول             - hara */
 .num { font-weight:800; font-size:9.5px; text-align:right; font-family:Arial, sans-serif; white-space:nowrap; }
 .center { text-align:center; }
-.details { font-size:8px; color:#333; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52mm; }
+.details { font-size:9px; color:#333; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52mm; }
 /* Plain sentence shown under every row, e.g. "ہم نے کاریگر کو سونا دیا" */
 .plain-line { font-size:9px; font-weight:700; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52mm; }
 .given-text { color:#b91c1c; }
+.puregold-text { color:#1d4ed8; }
+.returned-text { color:#6d28d9; }
 .received-text { color:#047857; }
 .balance-lena { color:#b91c1c; font-weight:900; }
 .balance-jama { color:#047857; font-weight:900; }
@@ -321,25 +372,25 @@ table { width:100%; border-collapse:collapse; }
                 <?php foreach ($sequence as $row): ?>
                 <tr>
                     <td class="center"><?= formatDate($row['date']) ?></td>
-                    <td class="center"><span class="badge <?= $row['kind'] === 'given' ? 'given' : 'received' ?> urdu"><?= htmlspecialchars($row['urdu_label']) ?></span></td>
+                    <td class="center"><span class="badge <?= htmlspecialchars($row['badge_class']) ?> urdu"><?= htmlspecialchars($row['urdu_label']) ?></span></td>
                     <td>
                         <div class="details" style="font-weight:700;color:#111;"><?= htmlspecialchars($row['description']) ?></div>
                         <!-- Plain sentence, so someone who struggles reading a table can still understand this row -->
-                        <div class="plain-line urdu <?= $row['kind'] === 'given' ? 'given-text' : 'received-text' ?>"></div>
+                        <div class="plain-line urdu <?= htmlspecialchars($row['text_class']) ?>"></div>
                     </td>
                     <td class="center">
                         <div class="num"><?= mpWeight($row['main_weight']) ?> g</div>
                     </td>
                     <td class="center">
-                        <div class="num"><?= $row['ratti'] > 0 ? mpRatti($row['ratti']) : 'خالص' ?></div>
+                        <div class="num <?= ($row['is_receive'] && $row['ratti'] < -0.0001) ? 'received-text' : '' ?>"><?= mpRattiCell((float)$row['ratti'], (bool)$row['is_receive']) ?></div>
                     </td>
                     <?php if ($showRpWeight): ?>
-                    <td class="num"><?= !empty($row['rp_weight']) && $row['rp_weight'] > 0 ? mpWeight($row['rp_weight']) : '-' ?></td>
-                    <td class="num"><?= !empty($row['rp_amount']) && $row['rp_amount'] > 0 ? '' . mpAmount($row['rp_amount']) : '-' ?></td>
+                    <td class="num"><?= abs((float)$row['rp_weight']) > 0.0005 ? mpWeight($row['rp_weight']) : '-' ?></td>
+                    <td class="num"><?= abs((float)$row['rp_amount']) > 0.0005 ? '' . mpAmount($row['rp_amount']) : '-' ?></td>
                     <?php endif; ?>
-                    <?php if ($showCastingMazdoriWeight): ?><td class="num"><?= !empty($row['casting_mazdori_weight']) && $row['casting_mazdori_weight'] > 0 ? mpWeight($row['casting_mazdori_weight']) : '-' ?></td><?php endif; ?>
-                    <td class="num given-text"><?= $row['given'] > 0 ? mpWeight($row['given']) : '-' ?></td>
-                    <td class="num received-text"><?= $row['received'] > 0 ? mpWeight($row['received']) : '-' ?></td>
+                    <?php if ($showCastingMazdoriWeight): ?><td class="num"><?= abs((float)$row['casting_mazdori_weight']) > 0.0005 ? mpWeight($row['casting_mazdori_weight']) : '-' ?></td><?php endif; ?>
+                    <td class="num <?= htmlspecialchars($row['text_class']) ?>"><?= $row['given'] > 0.0005 ? mpWeight($row['given']) : '-' ?></td>
+                    <td class="num <?= htmlspecialchars($row['text_class']) ?>"><?= $row['received'] > 0.0005 ? mpWeight($row['received']) : '-' ?></td>
                     <td class="num <?= mpBalanceClass($row['balance']) ?>"><?= mpWeight(abs($row['balance'])) ?> <span class="urdu"><?= mpBalanceWord($row['balance']) ?></span></td>
                 </tr>
             <?php endforeach; endif; ?>
@@ -354,13 +405,13 @@ table { width:100%; border-collapse:collapse; }
         </tfoot>
     </table>
 
-    <div class="final-box">
+    <!--<div class="final-box">
         <div class="final-line"><span class="urdu">پچھلا بیلنس</span><span class="<?= mpBalanceClass($invoice['previous_balance']) ?>"><?= mpWeight(abs((float)$invoice['previous_balance'])) ?> g <?= mpBalanceWord($invoice['previous_balance']) ?></span></div>
         <div class="final-line"><span class="urdu">+ کل سونا دیا</span><span class="given-text">+ <?= mpWeight($totalGiven) ?> g</span></div>
         <div class="final-line"><span class="urdu">- کل سونا وصول</span><span class="received-text">- <?= mpWeight($totalReceived) ?> g</span></div>
         <?php if ($wasooli > 0): ?><div class="final-line"><span class="urdu">- وصولی / کیش</span><span>- <?= mpWeight($wasooli) ?> g</span></div><?php endif; ?>
         <div class="final-line total"><span class="urdu">باقی بیلنس</span><span class="<?= mpBalanceClass($finalBalance) ?>"><?= mpWeight(abs($finalBalance)) ?> g <?= mpBalanceWord($finalBalance) ?></span></div>
-    </div>
+    </div>-->
 
     <div class="note urdu">نوٹ: پٹھور سونے کی کوئی گارنٹی نہیں ہے، براہ کرم مال وصول کرتے وقت چیک کریں بعد میں شکایت قابل قبول نہیں۔</div>
     <div class="footer">Printed: <?= date('d-m-Y h:i A') ?> | <?= htmlspecialchars($workshopName) ?> | <?= htmlspecialchars($invoice['invoice_no']) ?></div>

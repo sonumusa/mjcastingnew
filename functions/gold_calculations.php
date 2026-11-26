@@ -93,8 +93,10 @@ function calculateGold(array $input): array {
     $totalReceivedKhalis = parseDecimal($input['total_received_khalis'] ?? 0);
 
     // Step 1: Waste Weight = Casting Weight ÷ 10 × Ratti Rate (custom rounded to 2dp)
+    // NOTE: `!= 0` (pehle `> 0` tha) taake CASTING RETURN (negative casting)
+    // bhi sahi calculate ho. Positive values par behaviour bilkul same hai.
     $wasteWeight = 0;
-    if ($castingWeight > 0 && $rattiRate > 0) {
+    if ($castingWeight != 0 && $rattiRate != 0) {
         $wasteWeight = customRoundTo2(($castingWeight / 10) * $rattiRate);
     }
 
@@ -103,7 +105,7 @@ function calculateGold(array $input): array {
 
     // Step 3: Male Waste = Total Weight ÷ 96 × Ratti (custom rounded to 2dp)
     $maleWaste = 0;
-    if ($totalWeight > 0 && $ratti > 0) {
+    if ($totalWeight != 0 && $ratti != 0) {
         $maleWaste = customRoundTo2(($totalWeight / 96) * $ratti);
     }
 
@@ -168,6 +170,25 @@ function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
 
 function convertToKhalis(float $grossWeight, float $rattiImpurity): float {
     if ($grossWeight <= 0) return 0;
+
+    // ---------------------------------------------------------------
+    // NEGATIVE RATTI  ("P Add")  -> value khalis me ADD hoti hai, LESS nahi.
+    // Formula (user ke mutabiq):
+    //     point  = ratti ki absolute value
+    //     value  = qty / (96 - point) * point
+    //     khalis = qty + value          ( = qty * 96 / (96 - point) )
+    // ---------------------------------------------------------------
+    if ($rattiImpurity < 0) {
+        $point = abs($rattiImpurity);
+        $denom = 96 - $point;
+        if ($denom <= 0) {
+            return customRoundTo2($grossWeight); // safety guard
+        }
+        $value = ($grossWeight / $denom) * $point;
+        return customRoundTo2($grossWeight + $value);
+    }
+
+    // POSITIVE / ZERO ratti -> purana "less" wala formula bilkul waisa hi rehta hai
     $khalis = $grossWeight - (($grossWeight / 96) * $rattiImpurity);
     return customRoundTo2($khalis);
 }
@@ -476,4 +497,102 @@ function buildCalculationBreakdown(array $invoice): array {
             'formula' => 'Previous + Effective - Wasooli - Received',
         ],
     ];
+}
+
+
+/* ============================================================
+ * Shared helpers (Invoice + Invoice Multiple)
+ * ============================================================ */
+
+/** UI jaisa custom rounding, sign-safe. customRoundTo2() ka alias. */
+if (!function_exists('imRound2')) {
+    function imRound2($v) { return customRoundTo2((float) $v); }
+}
+
+/**
+ * Ek gold-calculation row ka hisaab, BAGHAIR max(0) clamps ke,
+ * taake CASTING RETURN (negative casting) sahi chale.
+ */
+if (!function_exists('imCalcRow')) {
+    function imCalcRow($casting, $ratti, $rate, $rpW, $castW, $wasteAdj = 0, $maleAdj = 0) {
+        $casting = (float) $casting;
+        $ratti   = (float) $ratti;
+        $rate    = (float) $rate;
+        $rpW     = (float) $rpW;
+        $castW   = (float) $castW;
+
+        $waste  = ($casting != 0 && $rate != 0) ? imRound2(($casting / 10) * $rate) : 0;
+        $waste  = round($waste + (float) $wasteAdj, 3);
+        $total  = round($casting + $waste, 3);
+        $male   = ($total != 0 && $ratti != 0) ? imRound2(($total / 96) * $ratti) : 0;
+        $male   = round($male + (float) $maleAdj, 3);
+        $khalis = round($total - $male, 3);
+
+        return [
+            'waste_weight'   => $waste,
+            'total_weight'   => $total,
+            'male_waste'     => $male,
+            'gold_khalis'    => $khalis,
+            'effective_gold' => round($khalis + $rpW + $castW, 3),
+        ];
+    }
+}
+
+/** customers table me party type ka column dhoondta hai (ya null). */
+if (!function_exists('imPartyTypeColumn')) {
+    function imPartyTypeColumn($db) {
+        static $col = false;
+        if ($col !== false) return $col;
+        $col = null;
+        foreach (['party_type', 'customer_type', 'type', 'category'] as $cand) {
+            try {
+                $st = $db->query("SHOW COLUMNS FROM customers LIKE " . $db->quote($cand));
+                if ($st && $st->fetch()) { $col = $cand; break; }
+            } catch (Exception $e) { /* ignore */ }
+        }
+        return $col;
+    }
+}
+
+/** Active parties + unka type (type-wise filtering ke liye). */
+if (!function_exists('imLoadParties')) {
+    function imLoadParties($db) {
+        $col = imPartyTypeColumn($db);
+        $sql = $col
+            ? "SELECT id, name, opening_balance, `$col` AS party_type FROM customers WHERE status='active' ORDER BY name"
+            : "SELECT id, name, opening_balance, '' AS party_type FROM customers WHERE status='active' ORDER BY name";
+        return $db->query($sql)->fetchAll();
+    }
+}
+
+/** Parties ko JS ke liye chhota array bana deta hai. */
+if (!function_exists('imPartyJs')) {
+    function imPartyJs($customers) {
+        $out = [];
+        foreach ($customers as $c) {
+            $out[] = [
+                'id'      => (int) $c['id'],
+                'name'    => (string) $c['name'],
+                'opening' => (float) $c['opening_balance'],
+                'type'    => strtolower(trim((string) ($c['party_type'] ?? ''))),
+            ];
+        }
+        return $out;
+    }
+}
+
+/** 1 tola = 11.664 gram (RP amount -> weight conversion ke liye). */
+if (!defined('IM_TOLA_GRAMS')) {
+    define('IM_TOLA_GRAMS', 11.664);
+}
+
+/**
+ * Settings ka "Default RP Rate" (Rs per tola).
+ * 0 ya khali ho to 0 return karta hai -> us soorat me auto-calc off rehta hai.
+ */
+if (!function_exists('imDefaultRpRate')) {
+    function imDefaultRpRate(): float {
+        $v = getSetting('default_rp_rate', 0);
+        return is_numeric($v) ? (float) $v : 0.0;
+    }
 }

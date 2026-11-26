@@ -148,7 +148,9 @@ $stmt = $db->prepare("SELECT * FROM invoice_receives WHERE invoice_id = ?");
 $stmt->execute([$id]);
 $existingReceives = $stmt->fetchAll();
 
-$customers = $db->query("SELECT id, name, opening_balance FROM customers WHERE status = 'active' ORDER BY name")->fetchAll();
+$customers = imLoadParties($db);
+$partyJs = imPartyJs($customers);
+$hasPartyType = (bool) imPartyTypeColumn($db);
 
 // Clamp saved ratti to valid range for dropdown
 //$savedRatti = (int) round($invoice['ratti']);
@@ -292,10 +294,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setFlash('success', "Invoice {$invoice['invoice_no']} updated successfully.");
 
         if (post('action') === 'print') {
-            redirect('invoices/print.php?id=' . $id);
+            redirect('invoices/print1.php?id=' . $id);
         }
         if (post('action') === 'print_receipt') {
-            redirect('invoices/print1.php?id=' . $id);
+            redirect('invoices/print2.php?id=' . $id);
         }
         redirect('invoices/show.php?id=' . $id);
 
@@ -340,7 +342,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="input-grid">
                     <div class="form-group full-width">
                         <label>Invoice Type <span class="font-urdu">بل کی قسم</span></label>
-                        <select name="invoice_type" id="invoice_type" class="form-control" required>
+                        <select name="invoice_type" id="invoice_type" class="form-control" required onchange="filterParties()">
                             <option value="customer" <?= $invoice['invoice_type']==='customer'?'selected':'' ?>>Customer Invoice (گاہک بل)</option>
                             <option value="dukandar" <?= $invoice['invoice_type']==='dukandar'?'selected':'' ?>>Dukandar Invoice (دوکاندار بل)</option>
                             <option value="karigar" <?= $invoice['invoice_type']==='karigar'?'selected':'' ?>>Karigar Invoice (کاریگر بل)</option>
@@ -350,9 +352,6 @@ require_once __DIR__ . '/../includes/header.php';
                         <label>Party <span class="font-urdu">گاہک / پارٹی</span></label>
                         <select name="customer_id" id="customer_id" class="form-control" required onchange="updateCustomerBalance(this.value)">
                             <option value="">Select Party</option>
-                            <?php foreach ($customers as $c): ?>
-                                <option value="<?= $c['id'] ?>" <?= $invoice['customer_id'] == $c['id'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
-                            <?php endforeach; ?>
                         </select>
                         <div id="customer-info" class="customer-info-box" style="display:<?= $invoice['customer_id'] ? 'block' : 'none' ?>;background:var(--bg-surface);border:1px solid var(--gold-muted);padding:12px 16px;border-radius:10px;margin-top:12px;">
                             <div style="font-weight:600;font-size:1rem;color:var(--gold-primary);margin-bottom:8px;" id="selected-customer-name">👤 <?= htmlspecialchars($invoice['customer_name'] ?? '') ?></div>
@@ -437,7 +436,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="form-group">
                         <label>RP Mazdori Amount <span class="font-urdu">آر پی مزدوری رقم</span></label>
                         <div class="calc-input-wrapper">
-                            <input type="number" name="rp_mazdori_amount" id="rp_mazdori_amount" class="form-control" step="1" value="<?= $invoice['rp_mazdori_amount'] ?>" oninput="calculateLive()">
+                            <input type="number" name="rp_mazdori_amount" id="rp_mazdori_amount" class="form-control" step="1" value="<?= $invoice['rp_mazdori_amount'] ?>" oninput="syncRpWeightFromAmount()">
                             <span class="unit-label">Rs</span>
                         </div>
                     </div>
@@ -617,6 +616,20 @@ require_once __DIR__ . '/../includes/header.php';
 </form>
 
 <script>
+
+/* Khalis = gross se khalis weight.
+   ratti >= 0 -> purana formula: gross - (gross/96 * ratti)   [LESS]
+   ratti <  0 -> "P Add": point = |ratti|, value = gross/(96-point)*point, khalis = gross + value  [ADD] */
+function khalisFromGross(gross, ratti) {
+    if (gross <= 0) return 0;
+    if (ratti < 0) {
+        const p = Math.abs(ratti), d = 96 - p;
+        if (d <= 0) return gross;
+        return gross + (gross / d) * p;
+    }
+    return gross - (gross / 96 * ratti);
+}
+
 let receiveRowCount = <?= count($existingReceives) ?>;
 let existingReceiveData = <?= json_encode($existingReceives) ?>;
 
@@ -753,7 +766,7 @@ function calculateLive() {
             const rattiImp = parseFloat(rattiInput.value) || 0;
             let khalis = 0;
             if (gross > 0) {
-                khalis = gross - (gross / 96 * rattiImp);
+                khalis = khalisFromGross(gross, rattiImp);
                // khalis = Math.round(khalis * 1000) / 1000;
                khalis = customRound2(khalis); 
             }
@@ -839,6 +852,83 @@ function calculateLive() {
     document.getElementById('live-casting-mazdori-amt').textContent = 'Rs ' + castingMazdoriAmount.toFixed(2);
 }
 
+
+const allParties = <?= json_encode($partyJs) ?>;
+const partyTypeColumnExists = <?= $hasPartyType ? 'true' : 'false' ?>;
+const lockedPartyId = <?= (int) $invoice['customer_id'] ?>;
+const preselectParty = <?= (int) $invoice['customer_id'] ?>;
+
+/* ---------- RP Amount -> RP Weight (settings ke Default RP Rate se) ----------
+   qty = amount * 11.664 / default_rp_rate
+   Rate 0 ya set na ho to auto-calc OFF rehta hai (weight ko haath nahi lagta). */
+const RP_TOLA_GRAMS = <?= json_encode(IM_TOLA_GRAMS) ?>;
+const RP_DEFAULT_RATE = <?= json_encode(imDefaultRpRate()) ?>;
+
+/* RP weight ko 2 decimal par laata hai.
+   Teesra decimal >= 7 ho to upar, warna cut.
+   0.2638 -> 0.26   |   0.267 -> 0.27 */
+function rpRound2(v) {
+    const sign = v < 0 ? -1 : 1;
+    const scaled = Math.round(Math.abs(v) * 1000);
+    const hundreds = Math.floor(scaled / 10);
+    const rem = scaled % 10;
+    return sign * ((rem >= 7 ? hundreds + 1 : hundreds) / 100);
+}
+
+function rpWeightFromAmount(amount) {
+    if (!RP_DEFAULT_RATE || RP_DEFAULT_RATE <= 0) return null;
+    amount = parseFloat(amount) || 0;
+    return rpRound2(amount * RP_TOLA_GRAMS / RP_DEFAULT_RATE);
+}
+
+/* ---------- Party list ko Invoice Type ke mutabiq filter karna ---------- */
+function normType(t) {
+    t = String(t || '').toLowerCase().trim();
+    if (['dukandar', 'dukaandar', 'dukan', 'shopkeeper', 'shop', 'dealer'].indexOf(t) !== -1) return 'dukandar';
+    if (['karigar', 'kareegar', 'kaarigar', 'worker', 'artisan', 'maker'].indexOf(t) !== -1) return 'karigar';
+    if (['customer', 'client', 'party', 'grahak'].indexOf(t) !== -1) return 'customer';
+    return t;
+}
+
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function filterParties(forceSelectId) {
+    const sel = document.getElementById('customer_id');
+    const typeSel = document.getElementById('invoice_type');
+    if (!sel || !typeSel) return;
+
+    const want = normType(typeSel.value);
+    const keep = (forceSelectId !== undefined && forceSelectId !== null && forceSelectId !== '')
+        ? String(forceSelectId) : String(sel.value || '');
+
+    let list = allParties;
+    if (partyTypeColumnExists) {
+        list = allParties.filter(p => normType(p.type) === want || String(p.id) === String(lockedPartyId));
+    }
+
+    let html = '<option value="">Select Party</option>';
+    list.forEach(p => {
+        html += '<option value="' + p.id + '" data-opening="' + p.opening + '"' +
+                (String(p.id) === keep ? ' selected' : '') + '>' + escHtml(p.name) + '</option>';
+    });
+    if (!list.length) {
+        html += '<option value="" disabled>No ' + want + ' party found - set party type in Customers</option>';
+    }
+    sel.innerHTML = html;
+
+    if (String(sel.value || '') !== keep) {
+        updateCustomerBalance(sel.value);
+    }
+}
+
+function syncRpWeightFromAmount() {
+    const w = rpWeightFromAmount(document.getElementById('rp_mazdori_amount').value);
+    if (w !== null) document.getElementById('rp_mazdori_weight').value = w.toFixed(2);
+    calculateLive();
+}
+
 function updateCustomerBalance(customerId) {
     if (!customerId) {
         document.getElementById('customer-info').style.display = 'none';
@@ -875,6 +965,7 @@ function updateCustomerBalance(customerId) {
 
 // Auto-load customer balance if pre-selected
 document.addEventListener('DOMContentLoaded', function() {
+    filterParties(preselectParty || '');
     const customerSelect = document.getElementById('customer_id');
     if (customerSelect.value) {
         updateCustomerBalance(customerSelect.value);
