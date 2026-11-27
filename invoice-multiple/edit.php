@@ -80,10 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $castAmt = parseDecimal($it['casting_mazdori_amount'] ?? 0);
             $wasteAdj = parseDecimal($it['waste_adjustment'] ?? 0);
             $maleAdj = parseDecimal($it['male_waste_adjustment'] ?? 0);
+            $isFinish = !empty($it['is_finish']) ? 1 : 0;
 
             // Casting RETURN allowed: negative casting is a valid row.
-            // Only completely empty rows are skipped.
-            if ($casting == 0 && $rpW == 0 && $rpAmt == 0 && $castW == 0 && $castAmt == 0 && $wasteAdj == 0 && $maleAdj == 0) {
+            // Only completely empty, unchecked rows are skipped.
+            if ($casting == 0 && $rpW == 0 && $rpAmt == 0 && $castW == 0 && $castAmt == 0 && $wasteAdj == 0 && $maleAdj == 0 && !$isFinish) {
                 continue;
             }
 
@@ -92,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row = [
                 'item_date' => $itemDate,
                 'description' => $it['description'] ?? '',
+                'is_finish' => $isFinish,
                 'casting_weight' => $casting,
                 'ratti' => $ratti,
                 'ratti_rate' => $rate,
@@ -129,11 +131,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $receiveDate = !empty($rec['receive_date'] ?? '') ? $rec['receive_date'] : $invoiceDate;
             $gross = parseDecimal($rec['gross_weight'] ?? 0);
             $rattiImp = parseDecimal($rec['ratti_impurity'] ?? 0);
-            if ($gross <= 0) continue;
+            $isFinish = !empty($rec['is_finish']) ? 1 : 0;
+            if ($gross <= 0 && !$isFinish) continue;
             $khalis = convertToKhalis($gross, $rattiImp);
             $receiveRows[] = [
                 'receive_date' => $receiveDate,
                 'description' => $rec['description'] ?? '',
+                'is_finish' => $isFinish,
                 'gross_weight' => $gross,
                 'ratti_impurity' => $rattiImp,
                 'khalis_weight' => $khalis
@@ -169,10 +173,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->prepare("DELETE FROM invoice_multiple_items WHERE invoice_multiple_id=?")->execute([$id]);
         $db->prepare("DELETE FROM invoice_multiple_receives WHERE invoice_multiple_id=?")->execute([$id]);
 
-        $ins = $db->prepare("INSERT INTO invoice_multiple_items (invoice_multiple_id,item_date,description,casting_weight,ratti,ratti_rate,waste_weight,total_weight,male_waste,gold_khalis,rp_mazdori_weight,rp_mazdori_amount,casting_mazdori_weight,casting_mazdori_amount,effective_gold) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        $ins = $db->prepare("INSERT INTO invoice_multiple_items (invoice_multiple_id,item_date,description,is_finish,casting_weight,ratti,ratti_rate,waste_weight,total_weight,male_waste,gold_khalis,rp_mazdori_weight,rp_mazdori_amount,casting_mazdori_weight,casting_mazdori_amount,effective_gold) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         foreach ($itemRows as $r) {
             $ins->execute([
-                $id, $r['item_date'], $r['description'], $r['casting_weight'],
+                $id, $r['item_date'], $r['description'], $r['is_finish'], $r['casting_weight'],
                 $r['ratti'], $r['ratti_rate'], $r['waste_weight'], $r['total_weight'],
                 $r['male_waste'], $r['gold_khalis'], $r['rp_mazdori_weight'],
                 $r['rp_mazdori_amount'], $r['casting_mazdori_weight'],
@@ -180,10 +184,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        $rin = $db->prepare("INSERT INTO invoice_multiple_receives (invoice_multiple_id,receive_date,description,gross_weight,ratti_impurity,khalis_weight) VALUES (?,?,?,?,?,?)");
+        $rin = $db->prepare("INSERT INTO invoice_multiple_receives (invoice_multiple_id,receive_date,description,is_finish,gross_weight,ratti_impurity,khalis_weight) VALUES (?,?,?,?,?,?,?)");
         foreach ($receiveRows as $r) {
             $rin->execute([
-                $id, $r['receive_date'], $r['description'],
+                $id, $r['receive_date'], $r['description'], $r['is_finish'],
                 $r['gross_weight'], $r['ratti_impurity'], $r['khalis_weight']
             ]);
         }
@@ -230,10 +234,12 @@ input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 .total-box { grid-column: span 4; margin-top: 8px; padding: 18px; border-radius: 12px; background: linear-gradient(135deg, #064e3b, #059669); color: #fff; text-align: center; }
 .total-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; opacity: .9; margin-bottom: 6px; }
 .total-value { font-size: 1.6rem; font-family: JetBrains Mono, monospace; font-weight: 700; }
-.receive-row { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 44px; gap: 12px; align-items: end; margin-bottom: 12px; padding: 14px; background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); }
+.receive-row { display: grid; grid-template-columns: 44px 1fr 2fr 1fr 1fr 1fr 44px; gap: 12px; align-items: end; margin-bottom: 12px; padding: 14px; background: var(--bg-surface); border-radius: 12px; border: 1px solid var(--border-color); }
 @media (max-width: 1100px) { .section-narrow { width: 100%; min-width: auto; } }
+@media (max-width: 768px) { .receive-row { grid-template-columns: 1fr; } }
 </style>';
 
+$extraJs = '<script src="' . htmlspecialchars(url('assets/invoice-multiple-duplicate-check.js'), ENT_QUOTES, 'UTF-8') . '"></script>';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
@@ -300,6 +306,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <table class="calc-table">
                         <thead>
                             <tr>
+                                <th>Is Finish</th>
                                 <th>Date</th>
                                 <th>Description</th>
                                 <th>Casting <small style="opacity:.65;font-weight:400;">(&minus; = return)</small></th>
@@ -412,6 +419,17 @@ require_once __DIR__ . '/../includes/header.php';
     </div>
 </form>
 
+<div class="duplicate-weight-modal" id="duplicate-weight-modal" hidden>
+    <div class="duplicate-weight-dialog" role="dialog" aria-modal="true" aria-labelledby="duplicate-weight-title" aria-describedby="duplicate-weight-message">
+        <h2 id="duplicate-weight-title">Duplicate weights found</h2>
+        <p id="duplicate-weight-message"></p>
+        <div class="duplicate-weight-actions">
+            <button type="button" class="btn btn-outline" id="duplicate-weight-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="duplicate-weight-continue">Process Anyway</button>
+        </div>
+    </div>
+</div>
+
 <script>
 let calcRowCount = 0, recRowCount = 0, previousBalance = <?= json_encode((float)$invoice['previous_balance']) ?>;
 const existingItems = <?= json_encode($existingItems) ?>;
@@ -500,6 +518,7 @@ function addCalcRow(data = {}) {
     const rate = data.ratti_rate || 0.100;
     const displayedRate = isDukandar ? 0 : rate;
     document.getElementById('calc-rows').insertAdjacentHTML('beforeend', `<tr id="calc-row-${id}">
+        <td class="text-center"><input type="checkbox" name="items[${id}][is_finish]" value="1" aria-label="Is finish" ${Number(data.is_finish) === 1 ? 'checked' : ''}></td>
         <td><input class="form-control" type="date" name="items[${id}][item_date]" value="${data.item_date || getToday()}" oninput="calcLive()"></td>
         <td><input class="form-control" type="text" name="items[${id}][description]" value="${esc(data.description || '')}"></td>
         <td><input class="form-control" type="number" step="0.001" name="items[${id}][casting_weight]" value="${data.casting_weight || 0}" oninput="calcLive()"></td>
@@ -524,6 +543,7 @@ function addCalcRow(data = {}) {
 function addReceiveRow(data = {}) {
     const id = recRowCount++;
     document.getElementById('receives-container').insertAdjacentHTML('beforeend', `<div class="receive-row" id="rec-row-${id}">
+        <div class="form-group"><label style="font-size:.7rem;">Is Finish</label><input type="checkbox" name="receives[${id}][is_finish]" value="1" aria-label="Is finish (received gold)" ${Number(data.is_finish) === 1 ? 'checked' : ''}></div>
         <div class="form-group"><label style="font-size:.7rem;">Date</label><input type="date" name="receives[${id}][receive_date]" class="form-control" value="${data.receive_date || getToday()}"></div>
         <div class="form-group"><label style="font-size:.7rem;">Description</label><input type="text" name="receives[${id}][description]" class="form-control" value="${esc(data.description || '')}"></div>
         <div class="form-group"><label style="font-size:.7rem;">Gross Weight</label><input type="number" name="receives[${id}][gross_weight]" class="form-control" step="0.001" value="${data.gross_weight || 0}" oninput="calcLive()"></div>

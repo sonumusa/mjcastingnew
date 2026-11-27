@@ -136,6 +136,15 @@ $fmtMailG = function ($v) {
     return number_format($v, 3) . ' g';
 };
 
+// Opening & Closing Balance
+$prevBal = round((float)($invoice['previous_balance'] ?? 0), 3);
+$prevBalStatus = $prevBal > 0.0005 ? 'لینا' : ($prevBal < -0.0005 ? 'جمع' : '');
+$prevBalClass = $prevBal > 0.0005 ? 'bal-lena' : ($prevBal < -0.0005 ? 'bal-jama' : 'bal-zero');
+
+$closingBal = round($prevBal - $totalKhalis, 3);
+$closingBalStatus = $closingBal > 0.0005 ? 'لینا' : ($closingBal < -0.0005 ? 'جمع' : '');
+$closingBalClass = $closingBal > 0.0005 ? 'bal-lena' : ($closingBal < -0.0005 ? 'bal-jama' : 'bal-zero');
+
 // Row density so more rows still fit inside one third
 $n = count($rows);
 $density = $n <= 4 ? 'normal' : ($n <= 6 ? 'compact' : 'grow');
@@ -160,8 +169,8 @@ $slotUrl = function (int $s) use ($id) {
     background: #e6e6e6;
     color: #000;
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 8pt;
-    line-height: 1.2;
+    font-size: 9pt;
+    line-height: 1.15;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     padding: 56px 0 24px;
@@ -181,7 +190,7 @@ $slotUrl = function (int $s) use ($id) {
   /* One third of the sheet. Ends with a dashed cut / fold line. */
   .slot {
     min-height: 66.667mm;
-    padding: 1.6mm 2mm 1.8mm;
+    padding: 1.3mm 1.8mm 1.5mm;
     display: flex;
     flex-direction: column;
     border-bottom: .3mm dashed #888;
@@ -206,12 +215,12 @@ $slotUrl = function (int $s) use ($id) {
     background: #fff;
     border: .35mm solid #0f2f4f;
     border-radius: 1.4mm;
-    padding: 1.4mm;
+    padding: 1.1mm;
   }
 
   /* ---------- Header ---------- */
   .hdr {
-    height: 13mm;
+    height: 12.2mm;
     flex-shrink: 0;
     display: flex;
     align-items: stretch;
@@ -219,10 +228,10 @@ $slotUrl = function (int $s) use ($id) {
     border: .5mm solid #c79b2b;
     border-radius: 2mm;
     overflow: hidden;
-    margin-bottom: .9mm;
+    margin-bottom: .7mm;
   }
   .hdr-left {
-    width: 22mm;
+    width: 21mm;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -230,18 +239,18 @@ $slotUrl = function (int $s) use ($id) {
     border-right: .5mm solid #c79b2b;
   }
   .logo-hex {
-    width: 7.5mm;
-    height: 7.5mm;
+    width: 7mm;
+    height: 7mm;
     border: .5mm solid #d9b14a;
     border-radius: 1.6mm;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(217,177,74,.1);
-    margin-bottom: .6mm;
+    margin-bottom: .4mm;
   }
-  .logo-mj { font-size: 6.5pt; font-weight: 800; color: #d9b14a; letter-spacing: .3mm; }
-  .logo-text { font-size: 4pt; font-weight: 700; color: #d9b14a; letter-spacing: .3mm; text-transform: uppercase; }
+  .logo-mj { font-size: 7.5pt; font-weight: 800; color: #d9b14a; letter-spacing: .3mm; }
+  .logo-text { font-size: 4.6pt; font-weight: 700; color: #d9b14a; letter-spacing: .2mm; text-transform: uppercase; }
 
   .hdr-center {
     flex: 1;
@@ -252,7 +261,7 @@ $slotUrl = function (int $s) use ($id) {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 0 5mm;
+    padding: 0 4.5mm;
   }
   .hdr-center::before,
   .hdr-center::after {
@@ -265,21 +274,21 @@ $slotUrl = function (int $s) use ($id) {
   }
   .hdr-center::before { left: -2mm; clip-path: polygon(0 0, 100% 50%, 0 100%); }
   .hdr-center::after { right: -2mm; clip-path: polygon(100% 0, 0 50%, 100% 100%); }
-  .company { font-size: 14pt; font-weight: 800; color: #0f2f4f; letter-spacing: .5mm; line-height: 1.1; }
+  .company { font-size: 16pt; font-weight: 800; color: #0f2f4f; letter-spacing: .4mm; line-height: 1.05; }
   .contact {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 0 2mm;
-    font-size: 5pt;
-    font-weight: 600;
-    color: #222;
-    line-height: 1.35;
+    font-size: 5.8pt;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
     text-align: center;
   }
 
   .hdr-right {
-    width: 34mm;
+    width: 35mm;
     background: linear-gradient(135deg, #143f67 0%, #0f2f4f 100%);
     border-left: .5mm solid #c79b2b;
     display: flex;
@@ -287,13 +296,13 @@ $slotUrl = function (int $s) use ($id) {
     justify-content: center;
     align-items: center;
   }
-  .urdu-main { font-family: 'Noto Nastaliq Urdu', serif; font-size: 8.5pt; font-weight: 700; color: #d9b14a; line-height: 1.3; }
-  .urdu-sub { font-family: 'Noto Nastaliq Urdu', serif; font-size: 4.8pt; color: #d9b14a; line-height: 1.3; }
-  .urdu-div { font-size: 5pt; color: #d9b14a; line-height: 1.1; }
+  .urdu-main { font-family: 'Noto Nastaliq Urdu', serif; font-size: 9.8pt; font-weight: 700; color: #d9b14a; line-height: 1.2; }
+  .urdu-sub { font-family: 'Noto Nastaliq Urdu', serif; font-size: 5.5pt; color: #d9b14a; line-height: 1.2; }
+  .urdu-div { font-size: 5pt; color: #d9b14a; line-height: 1; }
 
   /* ---------- Title strip ---------- */
   .title-bar {
-    height: 4.4mm;
+    height: 4.3mm;
     flex-shrink: 0;
     display: flex;
     justify-content: space-between;
@@ -302,8 +311,8 @@ $slotUrl = function (int $s) use ($id) {
     border: .25mm solid #c79b2b;
     padding: 0 2.5mm;
   }
-  .t-en { font-size: 6pt; font-weight: 800; letter-spacing: .5mm; color: #0f2f4f; }
-  .t-ur { font-family: 'Noto Nastaliq Urdu', serif; font-size: 5.5pt; font-weight: 700; color: #0f2f4f; line-height: 1.25; }
+  .t-en { font-size: 7.2pt; font-weight: 800; letter-spacing: .4mm; color: #0f2f4f; }
+  .t-ur { font-family: 'Noto Nastaliq Urdu', serif; font-size: 6.6pt; font-weight: 700; color: #0f2f4f; line-height: 1.15; }
 
   /* ---------- Serial / date / bill / party ---------- */
   .info {
@@ -315,7 +324,7 @@ $slotUrl = function (int $s) use ($id) {
   }
   .cell {
     flex: 1;
-    padding: .4mm 2mm;
+    padding: .25mm 1.5mm;
     text-align: center;
     border-right: .25mm solid #999;
     display: flex;
@@ -324,106 +333,157 @@ $slotUrl = function (int $s) use ($id) {
   }
   .cell:last-child { border-right: none; }
   .cell.party {
-    flex: 2.4;
+    flex: 2.5;
     flex-direction: row;
     align-items: center;
     justify-content: center;
     gap: 1.5mm;
   }
-  .lbl { font-family: 'Noto Nastaliq Urdu', serif; font-size: 4.6pt; color: #666; line-height: 1.25; }
-  .val { font-size: 7.5pt; font-weight: 700; }
-  .party .lbl { font-size: 5.2pt; }
-  .party .val { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Arial, sans-serif; font-size: 7pt; line-height: 1.25; }
+  .lbl { font-family: 'Noto Nastaliq Urdu', serif; font-size: 5.4pt; font-weight: 700; color: #444; line-height: 1.15; }
+  .val { font-size: 9pt; font-weight: 800; line-height: 1.1; }
+  .party .lbl { font-size: 6.2pt; }
+  .party .val { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Arial, sans-serif; font-size: 8.8pt; font-weight: 800; line-height: 1.15; }
+
+  /* ---------- Opening Balance Strip (Before Table Header) ---------- */
+  .bal-bar {
+    height: 4.2mm;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1.2mm;
+    padding: 0 2mm;
+    border: .25mm solid #000;
+    border-top: none;
+    background: #fffbeb;
+  }
+  .bal-bar.closing {
+    border-top: none;
+    background: #f1f5f9;
+  }
+  .bal-lbl {
+    font-family: 'Noto Nastaliq Urdu', serif;
+    font-size: 6pt;
+    font-weight: 700;
+    color: #0f2f4f;
+    line-height: 1.15;
+    direction: rtl;
+  }
+  .bal-val {
+    font-size: 8.4pt;
+    font-weight: 800;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .bal-tag {
+    font-family: 'Noto Nastaliq Urdu', serif;
+    font-size: 5.8pt;
+    font-weight: 700;
+    line-height: 1.15;
+    direction: rtl;
+  }
+  .bal-lena { color: #c00; }
+  .bal-jama { color: #080; }
+  .bal-zero { color: #155724; }
 
   /* ---------- Receiving table ---------- */
   .tbl {
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    margin-top: .8mm;
+    margin-top: .5mm;
     flex-shrink: 0;
   }
   .tbl th {
     background: #e0e0e0;
     border: .25mm solid #000;
     font-family: 'Noto Nastaliq Urdu', serif;
-    font-size: 4.8pt;
+    font-size: 6pt;
     font-weight: 700;
-    line-height: 1.25;
-    height: 5.4mm;
-    padding: 0 .4mm;
+    line-height: 1.15;
+    height: 4.8mm;
+    padding: 0 .3mm;
     overflow: hidden;
     vertical-align: middle;
   }
   .tbl th.en {
     font-family: 'Segoe UI', Arial, sans-serif;
-    font-size: 6pt;
-    line-height: 1.2;
+    font-size: 7.4pt;
+    font-weight: 800;
+    line-height: 1.1;
   }
   .tbl td {
     border: .25mm solid #000;
     text-align: center;
     vertical-align: middle;
-    height: 4.8mm;
-    padding: 0 .6mm;
-    font-size: 7.5pt;
+    height: 4.3mm;
+    padding: 0 .4mm;
+    font-size: 9pt;
+    font-weight: 700;
+    line-height: 1.05;
     overflow: hidden;
     white-space: nowrap;
   }
-  .tbl td.num { font-weight: 600; }
-  .tbl td.khalis { font-weight: 800; color: #080; }
-  .tbl td.mail { color: #7a4b00; font-weight: 700; }
-  .tbl td.pts { color: #c00; font-weight: 700; font-size: 6.5pt; }
-  .tbl td.sr { font-size: 6.5pt; color: #555; background: #f4f4f4; }
+  .tbl td.num { font-weight: 700; }
+  .tbl td.khalis { font-weight: 900; color: #080; font-size: 9.2pt; }
+  .tbl td.mail { color: #7a4b00; font-weight: 800; }
+  .tbl td.pts { color: #c00; font-weight: 800; font-size: 7.6pt; }
+  .tbl td.sr { font-size: 7.8pt; font-weight: 700; color: #444; background: #f4f4f4; }
   .tbl td.desc {
     text-align: right;
     font-family: 'Noto Nastaliq Urdu', serif;
-    font-size: 5.4pt;
-    line-height: 1.25;
-    padding-right: 1.2mm;
+    font-size: 6.6pt;
+    font-weight: 700;
+    line-height: 1.15;
+    padding-right: 1mm;
   }
   .tbl tr.total td {
     background: #0f2f4f;
     color: #f3d58a;
     border-color: #0f2f4f;
-    font-weight: 800;
-    height: 5.6mm;
-    font-size: 8pt;
+    font-weight: 900;
+    height: 5mm;
+    font-size: 9.4pt;
   }
   .tbl tr.total td.desc {
-    font-size: 5pt;
-    line-height: 1.25;
+    font-size: 6pt;
+    line-height: 1.15;
     color: #f3d58a;
   }
 
   /* Compact mode (5-6 rows) */
-  .compact .tbl th { height: 4.6mm; font-size: 4.5pt; }
-  .compact .tbl td { height: 3.8mm; font-size: 6.8pt; }
-  .compact .tbl td.desc { font-size: 4.8pt; line-height: 1.2; }
-  .compact .tbl td.pts { font-size: 5.8pt; }
-  .compact .tbl td.sr { font-size: 5.8pt; }
-  .compact .tbl tr.total td { height: 4.5mm; font-size: 7.2pt; }
-  .compact .tbl tr.total td.desc { font-size: 4.6pt; }
+  .compact .bal-bar { height: 3.6mm; }
+  .compact .tbl th { height: 4.2mm; font-size: 5.4pt; }
+  .compact .tbl th.en { font-size: 6.8pt; }
+  .compact .tbl td { height: 3.4mm; font-size: 8pt; }
+  .compact .tbl td.khalis { font-size: 8.2pt; }
+  .compact .tbl td.desc { font-size: 5.8pt; line-height: 1.1; }
+  .compact .tbl td.pts { font-size: 6.8pt; }
+  .compact .tbl td.sr { font-size: 7pt; }
+  .compact .tbl tr.total td { height: 4.1mm; font-size: 8.4pt; }
+  .compact .tbl tr.total td.desc { font-size: 5.4pt; }
 
   /* ---------- Footer ---------- */
   .foot {
     margin-top: auto;
     flex-shrink: 0;
     border-top: .25mm solid #0f2f4f;
-    padding-top: .6mm;
+    padding-top: .35mm;
     text-align: center;
   }
   .note {
     font-family: 'Noto Nastaliq Urdu', serif;
-    font-size: 5pt;
-    line-height: 1.3;
-    color: #444;
+    font-size: 3.8pt;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #222;
   }
   .sys {
-    font-size: 4.8pt;
-    line-height: 1.25;
-    color: #777;
-    margin-top: .2mm;
+    font-size: 4.4pt;
+    font-weight: 600;
+    line-height: 1.15;
+    color: #555;
+    margin-top: .6mm;
   }
 
   /* ---------- Screen toolbar ---------- */
@@ -527,12 +587,20 @@ $slotUrl = function (int $s) use ($id) {
         </div>
       </div>
 
+      <div class="bal-bar">
+        <span class="bal-lbl">سابقہ بیلنس:</span>
+        <span class="bal-val <?= $prevBalClass ?>"><?= $fmtG(abs($prevBal)) ?></span>
+        <?php if ($prevBalStatus !== ''): ?>
+          <span class="bal-tag <?= $prevBalClass ?>">(<?= $prevBalStatus ?>)</span>
+        <?php endif; ?>
+      </div>
+
       <table class="tbl">
         <colgroup>
           <?php if ($hasPoints): ?>
-            <col style="width:15%"><col style="width:13%"><col style="width:8%"><col style="width:15%"><col style="width:16%"><col style="width:28%"><col style="width:5%">
+            <col style="width:16%"><col style="width:14%"><col style="width:7.5%"><col style="width:16%"><col style="width:16.5%"><col style="width:25.5%"><col style="width:4.5%">
           <?php else: ?>
-            <col style="width:16%"><col style="width:14%"><col style="width:9%"><col style="width:16%"><col style="width:39%"><col style="width:6%">
+            <col style="width:17%"><col style="width:15%"><col style="width:8.5%"><col style="width:17%"><col style="width:37%"><col style="width:5.5%">
           <?php endif; ?>
         </colgroup>
         <thead>
@@ -588,12 +656,20 @@ $slotUrl = function (int $s) use ($id) {
         </tbody>
       </table>
 
+      <div class="bal-bar closing">
+        <span class="bal-lbl">باقی بیلنس:</span>
+        <span class="bal-val <?= $closingBalClass ?>"><?= $fmtG(abs($closingBal)) ?></span>
+        <?php if ($closingBalStatus !== ''): ?>
+          <span class="bal-tag <?= $closingBalClass ?>">(<?= $closingBalStatus ?>)</span>
+        <?php endif; ?>
+      </div>
+
       <div class="foot">
         <div class="note">
           نوٹ: پٹھور سونے کی کوئی گارنٹی نہیں ہے، براہ کرم مال وصول کرتے وقت چیک کریں بعد میں شکایت قابل قبول نہیں۔
         </div>
         <div class="sys">
-          This document is computer generated and does not require any stamp/signature &nbsp;|&nbsp; <?= htmlspecialchars($workshopName) ?> &nbsp;|&nbsp; Printed: <?= date('d-m-Y h:i A') ?>
+          &nbsp;|&nbsp; <?= htmlspecialchars($workshopName) ?> &nbsp;|&nbsp; Printed: <?= date('d-m-Y h:i A') ?>
         </div>
       </div>
 

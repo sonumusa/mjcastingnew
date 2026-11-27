@@ -48,7 +48,9 @@ body {
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
     position: fixed;
     top: 0;
     left: 0;
@@ -88,8 +90,38 @@ body {
 .sidebar-nav {
     padding: 16px 12px;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
+
+.duplicate-weight-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.duplicate-weight-modal[hidden] { display: none; }
+
+.duplicate-weight-dialog {
+    width: 100%;
+    max-width: 480px;
+    padding: 24px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-3);
+}
+
+.duplicate-weight-dialog h2 { margin-bottom: 12px; color: var(--warning); font-size: 1.2rem; }
+.duplicate-weight-dialog p { margin-bottom: 20px; }
+.duplicate-weight-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 .nav-section-label {
     font-size: 0.65rem;

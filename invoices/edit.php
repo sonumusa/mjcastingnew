@@ -219,18 +219,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $description = $rec['description'] ?? '';
             if ($gross > 0 || $returnCastingEnabled || $description !== '') {
                 $khalis = convertToKhalis($gross, $rattiImpurity);
-                $inventoryKhalis = $returnCastingEnabled ? 0 : $khalis;
                 $totalReceivedKhalis += $khalis;
                 $receivesData[] = [
                     'description' => $description,
                     'gross_weight' => $gross,
                     'ratti_impurity' => $rattiImpurity,
-                    'khalis_weight' => $inventoryKhalis,
+                    'khalis_weight' => $khalis,
                     'return_casting_enabled' => $returnCastingEnabled ? 1 : 0,
                     'return_casting_weight' => $returnCastingWeight,
                     'return_ratti_rate' => $returnRattiRate,
                     'return_rp_weight' => $returnRpWeight,
-                    'return_casting_khalis' => 0,
                     'base_khalis' => $khalis,
                 ];
             }
@@ -279,10 +277,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($rec['return_casting_enabled']) {
             $khalisAfterRatti = customRoundTo2($rec['base_khalis']);
             $rowKhalis = round($khalisAfterRatti + $rec['return_rp_weight'], 3);
-            $rec['return_casting_khalis'] = $rowKhalis;
         } else {
             $rowKhalis = $rec['khalis_weight'];
         }
+        $rec['khalis_weight'] = $rowKhalis;
         $totalReceivedKhalis += $rowKhalis;
         unset($rec['base_khalis']);
     }
@@ -321,8 +319,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Delete old receives and recreate
         $db->prepare("DELETE FROM invoice_receives WHERE invoice_id = ?")->execute([$id]);
         foreach ($receivesData as $rec) {
-            $stmt = $db->prepare("INSERT INTO invoice_receives (invoice_id, description, gross_weight, ratti_impurity, khalis_weight, return_casting_enabled, return_casting_weight, return_ratti_rate, return_rp_weight, return_casting_khalis) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$id, $rec['description'], $rec['gross_weight'], $rec['ratti_impurity'], $rec['khalis_weight'], $rec['return_casting_enabled'], $rec['return_casting_weight'], $rec['return_ratti_rate'], $rec['return_rp_weight'], $rec['return_casting_khalis']]);
+            $stmt = $db->prepare("INSERT INTO invoice_receives (invoice_id, description, gross_weight, ratti_impurity, khalis_weight, return_casting_enabled, return_casting_weight, return_ratti_rate, return_rp_weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$id, $rec['description'], $rec['gross_weight'], $rec['ratti_impurity'], $rec['khalis_weight'], $rec['return_casting_enabled'], $rec['return_casting_weight'], $rec['return_ratti_rate'], $rec['return_rp_weight']]);
         }
 
         // Recalculate balance chain

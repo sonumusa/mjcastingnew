@@ -104,6 +104,10 @@
                 <span>Customer Report</span>
                 <span class="font-urdu nav-urdu">گاہک رپورٹ</span>
             </a>
+            <a href="<?= url('reports/finished_reconciliation.php') ?>" class="nav-item <?= strpos($_SERVER['PHP_SELF'], 'reports/finished_reconciliation') !== false ? 'active' : '' ?>">
+                <i class="bi bi-check2-square"></i>
+                <span>Finished Reconciliation</span>
+            </a>
                         <a href="<?= url('backup.php') ?>" class="nav-item">
                 <i class="bi bi-database-down"></i>
                 <span>Database Backup</span>
